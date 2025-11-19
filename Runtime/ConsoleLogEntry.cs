@@ -13,6 +13,7 @@ namespace TrollGames.UnityConsole
         public string stackTrace;
         public LogType logType;
         public int frameCount;
+        public float fixedTime;
         public DateTime timestamp;
 
         public ConsoleLogEntry(string message, string stackTrace, LogType logType)
@@ -21,6 +22,7 @@ namespace TrollGames.UnityConsole
             this.stackTrace = stackTrace;
             this.logType = logType;
             this.frameCount = Time.frameCount;
+            this.fixedTime = Time.fixedTime;
             this.timestamp = DateTime.Now;
         }
     }
