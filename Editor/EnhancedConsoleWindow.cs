@@ -133,7 +133,7 @@ namespace otps.UnityConsole.Editor
             GUILayout.FlexibleSpace();
 
             // Time.frameCount 표시 토글
-            bool newShowFrameCount = GUILayout.Toggle(settings.ShowFrameCount, "Show Frame Count", EditorStyles.toolbarButton);
+            bool newShowFrameCount = GUILayout.Toggle(settings.ShowFrameCount, "Frame", EditorStyles.toolbarButton);
             if (newShowFrameCount != settings.ShowFrameCount)
             {
                 settings.ShowFrameCount = newShowFrameCount;
@@ -141,7 +141,7 @@ namespace otps.UnityConsole.Editor
             }
 
             // Time.fixedTime 표시 토글
-            bool newShowFixedTime = GUILayout.Toggle(settings.ShowFixedTime, "Show Fixed Time", EditorStyles.toolbarButton);
+            bool newShowFixedTime = GUILayout.Toggle(settings.ShowFixedTime, "GameTime", EditorStyles.toolbarButton);
             if (newShowFixedTime != settings.ShowFixedTime)
             {
                 settings.ShowFixedTime = newShowFixedTime;
@@ -149,7 +149,7 @@ namespace otps.UnityConsole.Editor
             }
 
             // DateTime.Now 표시 토글
-            bool newShowTimestamp = GUILayout.Toggle(settings.ShowTimestamp, "Show Timestamp", EditorStyles.toolbarButton);
+            bool newShowTimestamp = GUILayout.Toggle(settings.ShowTimestamp, "Time", EditorStyles.toolbarButton);
             if (newShowTimestamp != settings.ShowTimestamp)
             {
                 settings.ShowTimestamp = newShowTimestamp;
@@ -188,7 +188,19 @@ namespace otps.UnityConsole.Editor
                 // Frame Count 컬럼 (설정에 따라 표시)
                 if (settings.ShowFrameCount)
                 {
-                    GUILayout.Label($"[{entry.frameCount}]", textStyle, GUILayout.Width(80));
+                    GUILayout.Label($"[{entry.frameCount}]", textStyle, GUILayout.Width(60));
+                }
+
+                // Fixed Time 컬럼 (설정에 따라 표시)
+                if (settings.ShowFixedTime)
+                {
+                    GUILayout.Label($"[{entry.fixedTime:F2}s]", textStyle, GUILayout.Width(70));
+                }
+
+                // Timestamp 컬럼 (설정에 따라 표시)
+                if (settings.ShowTimestamp)
+                {
+                    GUILayout.Label($"[{entry.timestamp:HH:mm:ss}]", textStyle, GUILayout.Width(75));
                 }
 
                 // 로그 메시지
@@ -234,32 +246,7 @@ namespace otps.UnityConsole.Editor
                 
                 EditorGUILayout.Space(5);
                 
-                // 선택적 시간 정보 표시
-                if (settings.ShowFrameCount || settings.ShowFixedTime || settings.ShowTimestamp)
-                {
-                    EditorGUILayout.BeginHorizontal();
-                    
-                    if (settings.ShowFrameCount)
-                    {
-                        EditorGUILayout.LabelField($"Frame: {selectedEntry.frameCount}", GUILayout.Width(150));
-                    }
-                    
-                    if (settings.ShowFixedTime)
-                    {
-                        EditorGUILayout.LabelField($"Fixed Time: {selectedEntry.fixedTime:F3}s", GUILayout.Width(150));
-                    }
-                    
-                    if (settings.ShowTimestamp)
-                    {
-                        EditorGUILayout.LabelField($"Time: {selectedEntry.timestamp:HH:mm:ss.fff}", GUILayout.ExpandWidth(true));
-                    }
-                    
-                    EditorGUILayout.EndHorizontal();
-                    EditorGUILayout.Space(5);
-                }
-                
                 // Stack Trace 표시 (UnityEngine.Debug:Log 라인 제거)
-                EditorGUILayout.LabelField("Stack Trace:", EditorStyles.boldLabel);
                 detailScrollPosition = EditorGUILayout.BeginScrollView(detailScrollPosition);
                 string filteredStackTrace = FilterStackTrace(selectedEntry.stackTrace);
                 EditorGUILayout.TextArea(filteredStackTrace, EditorStyles.wordWrappedLabel);
