@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-namespace TrollGames.UnityConsole
+namespace otps.UnityConsole
 {
     /// <summary>
     /// 콘솔 로그 항목을 나타내는 클래스

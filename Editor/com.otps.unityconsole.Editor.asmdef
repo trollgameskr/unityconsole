@@ -1,6 +1,6 @@
 {
-    "name": "com.trollgames.unityconsole.Editor",
-    "rootNamespace": "TrollGames.UnityConsole.Editor",
+    "name": "com.otps.unityconsole.Editor",
+    "rootNamespace": "otps.UnityConsole.Editor",
     "references": [
         "GUID:e4fa2f701c4e44bca9a2c62d3b78f0c3"
     ],

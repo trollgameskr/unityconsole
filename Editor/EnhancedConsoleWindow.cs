@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
-namespace TrollGames.UnityConsole.Editor
+namespace otps.UnityConsole.Editor
 {
     /// <summary>
     /// Time.frameCount를 표시하는 확장된 Unity 콘솔 창
