@@ -30,8 +30,11 @@ namespace otps.UnityConsole.Editor
         private GUIStyle errorStyle;
         private GUIStyle evenBackgroundStyle;
         private GUIStyle oddBackgroundStyle;
+        private GUIStyle selectedBackgroundStyle;
 
         private ConsoleSettings settings;
+        
+        private bool wasScrollAtBottom = true;
         
         private string newTagInput = "";
 
@@ -75,6 +78,9 @@ namespace otps.UnityConsole.Editor
 
             oddBackgroundStyle = new GUIStyle();
             oddBackgroundStyle.normal.background = MakeTexture(2, 2, new Color(0.25f, 0.25f, 0.25f, 1f));
+
+            selectedBackgroundStyle = new GUIStyle();
+            selectedBackgroundStyle.normal.background = MakeTexture(2, 2, new Color(0.3f, 0.5f, 0.7f, 1f)); // 연한 파랑색
         }
 
         private Texture2D MakeTexture(int width, int height, Color color)
@@ -102,6 +108,17 @@ namespace otps.UnityConsole.Editor
             if (errorPause && type == LogType.Error)
             {
                 Debug.Break();
+            }
+
+            // 스크롤이 하단에 있으면 자동으로 스크롤
+            if (wasScrollAtBottom)
+            {
+                // 다음 프레임에서 스크롤을 맨 아래로 설정
+                EditorApplication.delayCall += () =>
+                {
+                    scrollPosition.y = float.MaxValue;
+                    Repaint();
+                };
             }
 
             Repaint();
@@ -355,7 +372,20 @@ namespace otps.UnityConsole.Editor
                 if (!ShouldShowLog(entry.logType))
                     continue;
 
-                GUIStyle backgroundStyle = (i % 2 == 0) ? evenBackgroundStyle : oddBackgroundStyle;
+                int actualIndex = logEntries.IndexOf(entry);
+                bool isSelected = (actualIndex == selectedIndex);
+                
+                // 선택된 로그는 연한 파랑색 배경, 아니면 짝수/홀수 배경
+                GUIStyle backgroundStyle;
+                if (isSelected)
+                {
+                    backgroundStyle = selectedBackgroundStyle;
+                }
+                else
+                {
+                    backgroundStyle = (i % 2 == 0) ? evenBackgroundStyle : oddBackgroundStyle;
+                }
+                
                 GUIStyle textStyle = GetStyleForLogType(entry.logType);
                 
                 // 배경색이 적용된 텍스트 스타일 생성
@@ -391,8 +421,6 @@ namespace otps.UnityConsole.Editor
                 string displayMessage = entry.message;
                 if (GUILayout.Button(displayMessage, buttonStyle, GUILayout.ExpandWidth(true)))
                 {
-                    int actualIndex = logEntries.IndexOf(entry);
-                    
                     // 더블 클릭 감지
                     double currentTime = EditorApplication.timeSinceStartup;
                     if (actualIndex == lastClickedIndex && (currentTime - lastClickTime) < 0.3)
@@ -415,6 +443,13 @@ namespace otps.UnityConsole.Editor
             }
 
             EditorGUILayout.EndScrollView();
+            
+            // 스크롤 위치가 하단에 있는지 확인 (여유를 두고 10픽셀 이내)
+            // GUILayoutUtility.GetLastRect()로 마지막 ScrollView의 크기를 가져옴
+            Rect scrollViewRect = GUILayoutUtility.GetLastRect();
+            float contentHeight = filteredEntries.Count * 20f; // 대략적인 로그 항목 높이
+            float maxScrollY = Mathf.Max(0, contentHeight - scrollViewRect.height);
+            wasScrollAtBottom = (maxScrollY == 0) || (scrollPosition.y >= maxScrollY - 10f);
         }
 
         private void DrawDetailArea()
