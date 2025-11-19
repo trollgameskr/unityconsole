@@ -109,9 +109,70 @@ namespace otps.UnityConsole.Editor
                 InitializeStyles();
             }
 
+            HandleKeyboardInput();
+            
             DrawToolbar();
             DrawLogList();
             DrawDetailArea();
+        }
+        
+        private void HandleKeyboardInput()
+        {
+            Event e = Event.current;
+            if (e.type == EventType.KeyDown && selectedIndex >= 0)
+            {
+                if (e.keyCode == KeyCode.DownArrow)
+                {
+                    // 다음 에러로 이동
+                    int nextErrorIndex = FindNextError(selectedIndex);
+                    if (nextErrorIndex >= 0)
+                    {
+                        selectedIndex = nextErrorIndex;
+                        e.Use();
+                        Repaint();
+                    }
+                }
+                else if (e.keyCode == KeyCode.UpArrow)
+                {
+                    // 이전 에러로 이동
+                    int prevErrorIndex = FindPreviousError(selectedIndex);
+                    if (prevErrorIndex >= 0)
+                    {
+                        selectedIndex = prevErrorIndex;
+                        e.Use();
+                        Repaint();
+                    }
+                }
+            }
+        }
+        
+        private int FindNextError(int currentIndex)
+        {
+            for (int i = currentIndex + 1; i < logEntries.Count; i++)
+            {
+                if (IsErrorLog(logEntries[i].logType))
+                {
+                    return i;
+                }
+            }
+            return -1;
+        }
+        
+        private int FindPreviousError(int currentIndex)
+        {
+            for (int i = currentIndex - 1; i >= 0; i--)
+            {
+                if (IsErrorLog(logEntries[i].logType))
+                {
+                    return i;
+                }
+            }
+            return -1;
+        }
+        
+        private bool IsErrorLog(LogType type)
+        {
+            return type == LogType.Error || type == LogType.Exception || type == LogType.Assert;
         }
 
         private void DrawToolbar()
@@ -193,30 +254,39 @@ namespace otps.UnityConsole.Editor
 
                 GUIStyle backgroundStyle = (i % 2 == 0) ? evenBackgroundStyle : oddBackgroundStyle;
                 GUIStyle textStyle = GetStyleForLogType(entry.logType);
+                
+                // 배경색이 적용된 텍스트 스타일 생성
+                GUIStyle styledTextStyle = new GUIStyle(textStyle);
+                styledTextStyle.normal.background = backgroundStyle.normal.background;
+                
+                // 배경색이 적용된 버튼 스타일 생성
+                GUIStyle buttonStyle = new GUIStyle(textStyle);
+                buttonStyle.normal.background = backgroundStyle.normal.background;
+                buttonStyle.alignment = TextAnchor.MiddleLeft;
 
                 EditorGUILayout.BeginHorizontal(backgroundStyle);
 
                 // Frame Count 컬럼 (설정에 따라 표시)
                 if (settings.ShowFrameCount)
                 {
-                    GUILayout.Label($"[{entry.frameCount}]", textStyle, GUILayout.Width(60));
+                    GUILayout.Label($"[{entry.frameCount}]", styledTextStyle, GUILayout.Width(60));
                 }
 
                 // Fixed Time 컬럼 (설정에 따라 표시)
                 if (settings.ShowFixedTime)
                 {
-                    GUILayout.Label($"[{entry.fixedTime:F2}s]", textStyle, GUILayout.Width(70));
+                    GUILayout.Label($"[{entry.fixedTime:F2}s]", styledTextStyle, GUILayout.Width(70));
                 }
 
                 // Timestamp 컬럼 (설정에 따라 표시)
                 if (settings.ShowTimestamp)
                 {
-                    GUILayout.Label($"[{entry.timestamp:HH:mm:ss}]", textStyle, GUILayout.Width(75));
+                    GUILayout.Label($"[{entry.timestamp:HH:mm:ss}]", styledTextStyle, GUILayout.Width(75));
                 }
 
                 // 로그 메시지
                 string displayMessage = entry.message;
-                if (GUILayout.Button(displayMessage, textStyle, GUILayout.ExpandWidth(true)))
+                if (GUILayout.Button(displayMessage, buttonStyle, GUILayout.ExpandWidth(true)))
                 {
                     int actualIndex = logEntries.IndexOf(entry);
                     
@@ -397,8 +467,8 @@ namespace otps.UnityConsole.Editor
 
                 foreach (var entry in logEntries)
                 {
-                    // 검색 필터 확인
-                    if (hasSearchFilter && !entry.message.Contains(settings.SearchFilter))
+                    // 검색 필터 확인 (대소문자 구분 없이)
+                    if (hasSearchFilter && entry.message.IndexOf(settings.SearchFilter, System.StringComparison.OrdinalIgnoreCase) == -1)
                         continue;
                     
                     if (uniqueMessages.Add(entry.message))
@@ -411,8 +481,8 @@ namespace otps.UnityConsole.Editor
             {
                 foreach (var entry in logEntries)
                 {
-                    // 검색 필터 확인
-                    if (hasSearchFilter && !entry.message.Contains(settings.SearchFilter))
+                    // 검색 필터 확인 (대소문자 구분 없이)
+                    if (hasSearchFilter && entry.message.IndexOf(settings.SearchFilter, System.StringComparison.OrdinalIgnoreCase) == -1)
                         continue;
                     
                     filtered.Add(entry);
