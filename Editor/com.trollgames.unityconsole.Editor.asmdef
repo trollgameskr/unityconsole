@@ -1,0 +1,18 @@
+{
+    "name": "com.trollgames.unityconsole.Editor",
+    "rootNamespace": "TrollGames.UnityConsole.Editor",
+    "references": [
+        "GUID:e4fa2f701c4e44bca9a2c62d3b78f0c3"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

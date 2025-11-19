@@ -1,0 +1,14 @@
+{
+    "name": "com.trollgames.unityconsole.Runtime",
+    "rootNamespace": "TrollGames.UnityConsole",
+    "references": [],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
