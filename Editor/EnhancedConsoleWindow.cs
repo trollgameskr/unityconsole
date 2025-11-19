@@ -21,6 +21,9 @@ namespace TrollGames.UnityConsole.Editor
 
         private int selectedIndex = -1;
         private Vector2 detailScrollPosition;
+        
+        private double lastClickTime;
+        private int lastClickedIndex = -1;
 
         private GUIStyle logStyle;
         private GUIStyle warningStyle;
@@ -137,6 +140,22 @@ namespace TrollGames.UnityConsole.Editor
                 Repaint();
             }
 
+            // Time.fixedTime 표시 토글
+            bool newShowFixedTime = GUILayout.Toggle(settings.ShowFixedTime, "Show Fixed Time", EditorStyles.toolbarButton);
+            if (newShowFixedTime != settings.ShowFixedTime)
+            {
+                settings.ShowFixedTime = newShowFixedTime;
+                Repaint();
+            }
+
+            // DateTime.Now 표시 토글
+            bool newShowTimestamp = GUILayout.Toggle(settings.ShowTimestamp, "Show Timestamp", EditorStyles.toolbarButton);
+            if (newShowTimestamp != settings.ShowTimestamp)
+            {
+                settings.ShowTimestamp = newShowTimestamp;
+                Repaint();
+            }
+
             GUILayout.Space(5);
 
             showLog = GUILayout.Toggle(showLog, GetLogCount(LogType.Log).ToString(), EditorStyles.toolbarButton, GUILayout.Width(40));
@@ -176,7 +195,24 @@ namespace TrollGames.UnityConsole.Editor
                 string displayMessage = entry.message;
                 if (GUILayout.Button(displayMessage, textStyle, GUILayout.ExpandWidth(true)))
                 {
-                    selectedIndex = logEntries.IndexOf(entry);
+                    int actualIndex = logEntries.IndexOf(entry);
+                    
+                    // 더블 클릭 감지
+                    double currentTime = EditorApplication.timeSinceStartup;
+                    if (actualIndex == lastClickedIndex && (currentTime - lastClickTime) < 0.3)
+                    {
+                        // 더블 클릭됨 - IDE에서 스크립트 열기
+                        OpenScriptFromStackTrace(entry.stackTrace);
+                        lastClickedIndex = -1;
+                        lastClickTime = 0;
+                    }
+                    else
+                    {
+                        // 싱글 클릭 - 선택만
+                        selectedIndex = actualIndex;
+                        lastClickedIndex = actualIndex;
+                        lastClickTime = currentTime;
+                    }
                 }
 
                 EditorGUILayout.EndHorizontal();
@@ -193,22 +229,107 @@ namespace TrollGames.UnityConsole.Editor
                 
                 ConsoleLogEntry selectedEntry = logEntries[selectedIndex];
                 
-                EditorGUILayout.LabelField("Message:", EditorStyles.boldLabel);
+                // 메시지 표시 (레이블 없이)
                 EditorGUILayout.LabelField(selectedEntry.message, EditorStyles.wordWrappedLabel);
                 
                 EditorGUILayout.Space(5);
                 
-                EditorGUILayout.LabelField("Frame Count:", EditorStyles.boldLabel);
-                EditorGUILayout.LabelField(selectedEntry.frameCount.ToString());
+                // 선택적 시간 정보 표시
+                if (settings.ShowFrameCount || settings.ShowFixedTime || settings.ShowTimestamp)
+                {
+                    EditorGUILayout.BeginHorizontal();
+                    
+                    if (settings.ShowFrameCount)
+                    {
+                        EditorGUILayout.LabelField($"Frame: {selectedEntry.frameCount}", GUILayout.Width(150));
+                    }
+                    
+                    if (settings.ShowFixedTime)
+                    {
+                        EditorGUILayout.LabelField($"Fixed Time: {selectedEntry.fixedTime:F3}s", GUILayout.Width(150));
+                    }
+                    
+                    if (settings.ShowTimestamp)
+                    {
+                        EditorGUILayout.LabelField($"Time: {selectedEntry.timestamp:HH:mm:ss.fff}", GUILayout.ExpandWidth(true));
+                    }
+                    
+                    EditorGUILayout.EndHorizontal();
+                    EditorGUILayout.Space(5);
+                }
                 
-                EditorGUILayout.Space(5);
-                
+                // Stack Trace 표시 (UnityEngine.Debug:Log 라인 제거)
                 EditorGUILayout.LabelField("Stack Trace:", EditorStyles.boldLabel);
                 detailScrollPosition = EditorGUILayout.BeginScrollView(detailScrollPosition);
-                EditorGUILayout.TextArea(selectedEntry.stackTrace, EditorStyles.wordWrappedLabel);
+                string filteredStackTrace = FilterStackTrace(selectedEntry.stackTrace);
+                EditorGUILayout.TextArea(filteredStackTrace, EditorStyles.wordWrappedLabel);
                 EditorGUILayout.EndScrollView();
                 
                 EditorGUILayout.EndVertical();
+            }
+        }
+
+        private string FilterStackTrace(string stackTrace)
+        {
+            if (string.IsNullOrEmpty(stackTrace))
+                return stackTrace;
+
+            var lines = stackTrace.Split('\n');
+            var filteredLines = new List<string>();
+
+            foreach (var line in lines)
+            {
+                // UnityEngine.Debug:Log로 시작하는 라인 스킵
+                if (line.TrimStart().StartsWith("UnityEngine.Debug:Log"))
+                    continue;
+                
+                filteredLines.Add(line);
+            }
+
+            return string.Join("\n", filteredLines);
+        }
+
+        private void OpenScriptFromStackTrace(string stackTrace)
+        {
+            if (string.IsNullOrEmpty(stackTrace))
+                return;
+
+            var lines = stackTrace.Split('\n');
+            
+            foreach (var line in lines)
+            {
+                // UnityEngine.Debug:Log 라인은 스킵
+                if (line.TrimStart().StartsWith("UnityEngine.Debug:Log"))
+                    continue;
+
+                // 스택 트레이스 형식: "ClassName:MethodName() (at Assets/...path.cs:lineNumber)"
+                int atIndex = line.IndexOf(" (at ");
+                if (atIndex > 0)
+                {
+                    int endIndex = line.LastIndexOf(')');
+                    if (endIndex > atIndex)
+                    {
+                        string pathAndLine = line.Substring(atIndex + 5, endIndex - atIndex - 5);
+                        int colonIndex = pathAndLine.LastIndexOf(':');
+                        
+                        if (colonIndex > 0)
+                        {
+                            string filePath = pathAndLine.Substring(0, colonIndex);
+                            string lineNumberStr = pathAndLine.Substring(colonIndex + 1);
+                            
+                            if (int.TryParse(lineNumberStr, out int lineNumber))
+                            {
+                                // Unity API를 사용하여 파일 열기
+                                var scriptAsset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(filePath);
+                                if (scriptAsset != null)
+                                {
+                                    AssetDatabase.OpenAsset(scriptAsset, lineNumber);
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
