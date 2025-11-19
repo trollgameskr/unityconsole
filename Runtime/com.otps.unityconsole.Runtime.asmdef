@@ -1,6 +1,6 @@
 {
-    "name": "com.trollgames.unityconsole.Runtime",
-    "rootNamespace": "TrollGames.UnityConsole",
+    "name": "com.otps.unityconsole.Runtime",
+    "rootNamespace": "otps.UnityConsole",
     "references": [],
     "includePlatforms": [],
     "excludePlatforms": [],

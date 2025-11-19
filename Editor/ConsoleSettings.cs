@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace TrollGames.UnityConsole.Editor
+namespace otps.UnityConsole.Editor
 {
     /// <summary>
     /// 콘솔 설정을 관리하는 ScriptableObject

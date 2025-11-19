@@ -1,5 +1,5 @@
 {
-  "name": "com.trollgames.unityconsole",
+  "name": "com.otps.unityconsole",
   "version": "1.0.0",
   "displayName": "Unity Console Enhanced",
   "description": "Unity 콘솔에 Time.frameCount를 추가한 확장 패키지",
@@ -10,7 +10,7 @@
     "framecount"
   ],
   "author": {
-    "name": "TrollGames",
+    "name": "otps",
     "url": "https://github.com/trollgameskr"
   }
 }
