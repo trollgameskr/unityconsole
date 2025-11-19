@@ -1,0 +1,277 @@
+using System.Collections.Generic;
+using UnityEditor;
+using UnityEngine;
+
+namespace TrollGames.UnityConsole.Editor
+{
+    /// <summary>
+    /// Time.frameCount를 표시하는 확장된 Unity 콘솔 창
+    /// </summary>
+    public class EnhancedConsoleWindow : EditorWindow
+    {
+        private List<ConsoleLogEntry> logEntries = new List<ConsoleLogEntry>();
+        private Vector2 scrollPosition;
+        private bool collapse = false;
+        private bool clearOnPlay = false;
+        private bool errorPause = false;
+        
+        private bool showLog = true;
+        private bool showWarning = true;
+        private bool showError = true;
+
+        private int selectedIndex = -1;
+        private Vector2 detailScrollPosition;
+
+        private GUIStyle logStyle;
+        private GUIStyle warningStyle;
+        private GUIStyle errorStyle;
+        private GUIStyle evenBackgroundStyle;
+        private GUIStyle oddBackgroundStyle;
+
+        private ConsoleSettings settings;
+
+        [MenuItem("Window/Enhanced Console")]
+        public static void ShowWindow()
+        {
+            var window = GetWindow<EnhancedConsoleWindow>("Enhanced Console");
+            window.Show();
+        }
+
+        private void OnEnable()
+        {
+            settings = ConsoleSettings.Instance;
+            Application.logMessageReceived += HandleLog;
+            InitializeStyles();
+        }
+
+        private void OnDisable()
+        {
+            Application.logMessageReceived -= HandleLog;
+        }
+
+        private void InitializeStyles()
+        {
+            logStyle = new GUIStyle();
+            logStyle.normal.textColor = Color.white;
+            logStyle.fontSize = 12;
+            logStyle.padding = new RectOffset(5, 5, 2, 2);
+
+            warningStyle = new GUIStyle(logStyle);
+            warningStyle.normal.textColor = Color.yellow;
+
+            errorStyle = new GUIStyle(logStyle);
+            errorStyle.normal.textColor = Color.red;
+
+            evenBackgroundStyle = new GUIStyle();
+            evenBackgroundStyle.normal.background = MakeTexture(2, 2, new Color(0.3f, 0.3f, 0.3f, 1f));
+
+            oddBackgroundStyle = new GUIStyle();
+            oddBackgroundStyle.normal.background = MakeTexture(2, 2, new Color(0.35f, 0.35f, 0.35f, 1f));
+        }
+
+        private Texture2D MakeTexture(int width, int height, Color color)
+        {
+            Color[] pixels = new Color[width * height];
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                pixels[i] = color;
+            }
+            Texture2D texture = new Texture2D(width, height);
+            texture.SetPixels(pixels);
+            texture.Apply();
+            return texture;
+        }
+
+        private void HandleLog(string logString, string stackTrace, LogType type)
+        {
+            if (clearOnPlay && !EditorApplication.isPlaying)
+            {
+                logEntries.Clear();
+            }
+
+            logEntries.Add(new ConsoleLogEntry(logString, stackTrace, type));
+
+            if (errorPause && type == LogType.Error)
+            {
+                Debug.Break();
+            }
+
+            Repaint();
+        }
+
+        private void OnGUI()
+        {
+            if (logStyle == null)
+            {
+                InitializeStyles();
+            }
+
+            DrawToolbar();
+            DrawLogList();
+            DrawDetailArea();
+        }
+
+        private void DrawToolbar()
+        {
+            EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
+
+            if (GUILayout.Button("Clear", EditorStyles.toolbarButton, GUILayout.Width(50)))
+            {
+                logEntries.Clear();
+                selectedIndex = -1;
+            }
+
+            GUILayout.Space(5);
+
+            collapse = GUILayout.Toggle(collapse, "Collapse", EditorStyles.toolbarButton);
+            clearOnPlay = GUILayout.Toggle(clearOnPlay, "Clear on Play", EditorStyles.toolbarButton);
+            errorPause = GUILayout.Toggle(errorPause, "Error Pause", EditorStyles.toolbarButton);
+
+            GUILayout.FlexibleSpace();
+
+            // Time.frameCount 표시 토글
+            bool newShowFrameCount = GUILayout.Toggle(settings.ShowFrameCount, "Show Frame Count", EditorStyles.toolbarButton);
+            if (newShowFrameCount != settings.ShowFrameCount)
+            {
+                settings.ShowFrameCount = newShowFrameCount;
+                Repaint();
+            }
+
+            GUILayout.Space(5);
+
+            showLog = GUILayout.Toggle(showLog, GetLogCount(LogType.Log).ToString(), EditorStyles.toolbarButton, GUILayout.Width(40));
+            showWarning = GUILayout.Toggle(showWarning, GetLogCount(LogType.Warning).ToString(), EditorStyles.toolbarButton, GUILayout.Width(40));
+            showError = GUILayout.Toggle(showError, GetLogCount(LogType.Error).ToString(), EditorStyles.toolbarButton, GUILayout.Width(40));
+
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private void DrawLogList()
+        {
+            float listHeight = position.height * 0.6f;
+            
+            scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition, GUILayout.Height(listHeight));
+
+            List<ConsoleLogEntry> filteredEntries = GetFilteredEntries();
+            
+            for (int i = 0; i < filteredEntries.Count; i++)
+            {
+                ConsoleLogEntry entry = filteredEntries[i];
+                
+                if (!ShouldShowLog(entry.logType))
+                    continue;
+
+                GUIStyle backgroundStyle = (i % 2 == 0) ? evenBackgroundStyle : oddBackgroundStyle;
+                GUIStyle textStyle = GetStyleForLogType(entry.logType);
+
+                EditorGUILayout.BeginHorizontal(backgroundStyle);
+
+                // Frame Count 컬럼 (설정에 따라 표시)
+                if (settings.ShowFrameCount)
+                {
+                    GUILayout.Label($"[{entry.frameCount}]", textStyle, GUILayout.Width(80));
+                }
+
+                // 로그 메시지
+                string displayMessage = entry.message;
+                if (GUILayout.Button(displayMessage, textStyle, GUILayout.ExpandWidth(true)))
+                {
+                    selectedIndex = logEntries.IndexOf(entry);
+                }
+
+                EditorGUILayout.EndHorizontal();
+            }
+
+            EditorGUILayout.EndScrollView();
+        }
+
+        private void DrawDetailArea()
+        {
+            if (selectedIndex >= 0 && selectedIndex < logEntries.Count)
+            {
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                
+                ConsoleLogEntry selectedEntry = logEntries[selectedIndex];
+                
+                EditorGUILayout.LabelField("Message:", EditorStyles.boldLabel);
+                EditorGUILayout.LabelField(selectedEntry.message, EditorStyles.wordWrappedLabel);
+                
+                EditorGUILayout.Space(5);
+                
+                EditorGUILayout.LabelField("Frame Count:", EditorStyles.boldLabel);
+                EditorGUILayout.LabelField(selectedEntry.frameCount.ToString());
+                
+                EditorGUILayout.Space(5);
+                
+                EditorGUILayout.LabelField("Stack Trace:", EditorStyles.boldLabel);
+                detailScrollPosition = EditorGUILayout.BeginScrollView(detailScrollPosition);
+                EditorGUILayout.TextArea(selectedEntry.stackTrace, EditorStyles.wordWrappedLabel);
+                EditorGUILayout.EndScrollView();
+                
+                EditorGUILayout.EndVertical();
+            }
+        }
+
+        private List<ConsoleLogEntry> GetFilteredEntries()
+        {
+            if (!collapse)
+                return logEntries;
+
+            List<ConsoleLogEntry> filtered = new List<ConsoleLogEntry>();
+            HashSet<string> uniqueMessages = new HashSet<string>();
+
+            foreach (var entry in logEntries)
+            {
+                if (uniqueMessages.Add(entry.message))
+                {
+                    filtered.Add(entry);
+                }
+            }
+
+            return filtered;
+        }
+
+        private bool ShouldShowLog(LogType type)
+        {
+            switch (type)
+            {
+                case LogType.Log:
+                    return showLog;
+                case LogType.Warning:
+                    return showWarning;
+                case LogType.Error:
+                case LogType.Exception:
+                case LogType.Assert:
+                    return showError;
+                default:
+                    return true;
+            }
+        }
+
+        private GUIStyle GetStyleForLogType(LogType type)
+        {
+            switch (type)
+            {
+                case LogType.Warning:
+                    return warningStyle;
+                case LogType.Error:
+                case LogType.Exception:
+                case LogType.Assert:
+                    return errorStyle;
+                default:
+                    return logStyle;
+            }
+        }
+
+        private int GetLogCount(LogType type)
+        {
+            int count = 0;
+            foreach (var entry in logEntries)
+            {
+                if (entry.logType == type)
+                    count++;
+            }
+            return count;
+        }
+    }
+}
