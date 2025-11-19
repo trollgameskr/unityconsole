@@ -274,17 +274,19 @@ namespace otps.UnityConsole.Editor
                 GUILayout.Space(5);
             }
             
-            // 태그 목록 표시 (버튼으로)
+            // 태그 목록 표시 (버튼으로) - 복사본으로 순회하여 안전하게 삭제
+            string tagToRemove = null;
             foreach (var tag in settings.Tags)
             {
-                // 활성 태그는 다른 스타일로 표시
+                // 활성 태그는 다른 색상으로 표시
                 bool isActive = settings.ActiveTag == tag;
-                GUIStyle buttonStyle = isActive ? new GUIStyle(EditorStyles.toolbarButton) 
+                Color originalColor = GUI.contentColor;
+                if (isActive)
                 {
-                    normal = new GUIStyleState { textColor = Color.cyan, background = EditorStyles.toolbarButton.normal.background }
-                } : EditorStyles.toolbarButton;
+                    GUI.contentColor = Color.cyan;
+                }
                 
-                if (GUILayout.Button(tag, buttonStyle, GUILayout.MinWidth(50)))
+                if (GUILayout.Button(tag, EditorStyles.toolbarButton, GUILayout.MinWidth(50)))
                 {
                     // 태그 클릭 시 필터 활성화/비활성화 토글
                     if (settings.ActiveTag == tag)
@@ -298,15 +300,22 @@ namespace otps.UnityConsole.Editor
                     Repaint();
                 }
                 
+                GUI.contentColor = originalColor;
+                
                 // 태그 삭제 버튼
                 if (GUILayout.Button("-", EditorStyles.toolbarButton, GUILayout.Width(20)))
                 {
-                    settings.RemoveTag(tag);
-                    Repaint();
-                    break; // 리스트 변경되었으므로 루프 종료
+                    tagToRemove = tag;
                 }
                 
                 GUILayout.Space(2);
+            }
+            
+            // 루프 밖에서 태그 삭제
+            if (tagToRemove != null)
+            {
+                settings.RemoveTag(tagToRemove);
+                Repaint();
             }
             
             GUILayout.FlexibleSpace();
