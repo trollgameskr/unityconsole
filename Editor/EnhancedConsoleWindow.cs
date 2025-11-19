@@ -69,7 +69,7 @@ namespace otps.UnityConsole.Editor
             evenBackgroundStyle.normal.background = MakeTexture(2, 2, new Color(0.3f, 0.3f, 0.3f, 1f));
 
             oddBackgroundStyle = new GUIStyle();
-            oddBackgroundStyle.normal.background = MakeTexture(2, 2, new Color(0.35f, 0.35f, 0.35f, 1f));
+            oddBackgroundStyle.normal.background = MakeTexture(2, 2, new Color(0.25f, 0.25f, 0.25f, 1f));
         }
 
         private Texture2D MakeTexture(int width, int height, Color color)
@@ -129,6 +129,17 @@ namespace otps.UnityConsole.Editor
             collapse = GUILayout.Toggle(collapse, "Collapse", EditorStyles.toolbarButton);
             clearOnPlay = GUILayout.Toggle(clearOnPlay, "Clear on Play", EditorStyles.toolbarButton);
             errorPause = GUILayout.Toggle(errorPause, "Error Pause", EditorStyles.toolbarButton);
+
+            GUILayout.Space(5);
+
+            // 검색 필터
+            GUILayout.Label("검색:", GUILayout.Width(35));
+            string newSearchFilter = EditorGUILayout.TextField(settings.SearchFilter, EditorStyles.toolbarTextField, GUILayout.Width(150));
+            if (newSearchFilter != settings.SearchFilter)
+            {
+                settings.SearchFilter = newSearchFilter;
+                Repaint();
+            }
 
             GUILayout.FlexibleSpace();
 
@@ -375,16 +386,35 @@ namespace otps.UnityConsole.Editor
 
         private List<ConsoleLogEntry> GetFilteredEntries()
         {
-            if (!collapse)
-                return logEntries;
-
             List<ConsoleLogEntry> filtered = new List<ConsoleLogEntry>();
-            HashSet<string> uniqueMessages = new HashSet<string>();
-
-            foreach (var entry in logEntries)
+            
+            // 검색 필터 적용
+            bool hasSearchFilter = !string.IsNullOrEmpty(settings.SearchFilter);
+            
+            if (collapse)
             {
-                if (uniqueMessages.Add(entry.message))
+                HashSet<string> uniqueMessages = new HashSet<string>();
+
+                foreach (var entry in logEntries)
                 {
+                    // 검색 필터 확인
+                    if (hasSearchFilter && !entry.message.Contains(settings.SearchFilter))
+                        continue;
+                    
+                    if (uniqueMessages.Add(entry.message))
+                    {
+                        filtered.Add(entry);
+                    }
+                }
+            }
+            else
+            {
+                foreach (var entry in logEntries)
+                {
+                    // 검색 필터 확인
+                    if (hasSearchFilter && !entry.message.Contains(settings.SearchFilter))
+                        continue;
+                    
                     filtered.Add(entry);
                 }
             }

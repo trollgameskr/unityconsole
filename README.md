@@ -5,11 +5,12 @@ Unity 기본 콘솔에 Time.frameCount를 추가한 확장 콘솔 패키지입�
 ## 기능
 
 - Unity 기본 콘솔과 유사한 UI
-- 홀수/짝수 행 배경색 구분으로 가독성 향상
+- 홀수/짝수 행 배경색 구분으로 가독성 향상 (회색/진한회색)
 - Time.frameCount 컬럼 표시/숨김 설정
 - Time.fixedTime 표시/숨김 설정
 - DateTime (타임스탬프) 표시/숨김 설정
 - 로그 타입별 필터링 (Log, Warning, Error)
+- **검색 필터**: 특정 단어가 포함된 로그만 표시
 - Collapse 모드
 - Clear on Play
 - Error Pause
@@ -29,6 +30,7 @@ Unity 기본 콘솔에 Time.frameCount를 추가한 확장 콘솔 패키지입�
 1. Unity Editor에서 `Window > Enhanced Console` 메뉴를 선택합니다
 2. Enhanced Console 창이 열립니다
 3. 툴바에서 다양한 옵션을 설정할 수 있습니다:
+   - **검색**: 특정 단어가 포함된 로그만 필터링하여 표시
    - **Show Frame Count**: Time.frameCount 표시/숨김
    - **Show Fixed Time**: Time.fixedTime 표시/숨김
    - **Show Timestamp**: DateTime.Now 타임스탬프 표시/숨김

@@ -11,6 +11,7 @@ namespace otps.UnityConsole.Editor
         private const string PrefsKey_ShowFrameCount = "UnityConsole_ShowFrameCount";
         private const string PrefsKey_ShowFixedTime = "UnityConsole_ShowFixedTime";
         private const string PrefsKey_ShowTimestamp = "UnityConsole_ShowTimestamp";
+        private const string PrefsKey_SearchFilter = "UnityConsole_SearchFilter";
 
         [SerializeField]
         private bool showFrameCount = true;
@@ -20,6 +21,9 @@ namespace otps.UnityConsole.Editor
         
         [SerializeField]
         private bool showTimestamp = false;
+        
+        [SerializeField]
+        private string searchFilter = "";
 
         public bool ShowFrameCount
         {
@@ -60,6 +64,19 @@ namespace otps.UnityConsole.Editor
             }
         }
 
+        public string SearchFilter
+        {
+            get => searchFilter;
+            set
+            {
+                if (searchFilter != value)
+                {
+                    searchFilter = value;
+                    SaveToPrefs();
+                }
+            }
+        }
+
         private static ConsoleSettings instance;
 
         public static ConsoleSettings Instance
@@ -80,6 +97,7 @@ namespace otps.UnityConsole.Editor
             showFrameCount = UnityEditor.EditorPrefs.GetBool(PrefsKey_ShowFrameCount, true);
             showFixedTime = UnityEditor.EditorPrefs.GetBool(PrefsKey_ShowFixedTime, false);
             showTimestamp = UnityEditor.EditorPrefs.GetBool(PrefsKey_ShowTimestamp, false);
+            searchFilter = UnityEditor.EditorPrefs.GetString(PrefsKey_SearchFilter, "");
         }
 
         private void SaveToPrefs()
@@ -87,6 +105,7 @@ namespace otps.UnityConsole.Editor
             UnityEditor.EditorPrefs.SetBool(PrefsKey_ShowFrameCount, showFrameCount);
             UnityEditor.EditorPrefs.SetBool(PrefsKey_ShowFixedTime, showFixedTime);
             UnityEditor.EditorPrefs.SetBool(PrefsKey_ShowTimestamp, showTimestamp);
+            UnityEditor.EditorPrefs.SetString(PrefsKey_SearchFilter, searchFilter);
         }
     }
 }
