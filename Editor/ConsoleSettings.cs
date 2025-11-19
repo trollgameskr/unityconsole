@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace otps.UnityConsole.Editor
@@ -12,6 +13,8 @@ namespace otps.UnityConsole.Editor
         private const string PrefsKey_ShowFixedTime = "UnityConsole_ShowFixedTime";
         private const string PrefsKey_ShowTimestamp = "UnityConsole_ShowTimestamp";
         private const string PrefsKey_SearchFilter = "UnityConsole_SearchFilter";
+        private const string PrefsKey_Tags = "UnityConsole_Tags";
+        private const string PrefsKey_ActiveTag = "UnityConsole_ActiveTag";
 
         [SerializeField]
         private bool showFrameCount = true;
@@ -24,6 +27,12 @@ namespace otps.UnityConsole.Editor
         
         [SerializeField]
         private string searchFilter = "";
+
+        [SerializeField]
+        private List<string> tags = new List<string>();
+        
+        [SerializeField]
+        private string activeTag = "";
 
         public bool ShowFrameCount
         {
@@ -77,6 +86,45 @@ namespace otps.UnityConsole.Editor
             }
         }
 
+        public List<string> Tags
+        {
+            get => tags;
+        }
+
+        public string ActiveTag
+        {
+            get => activeTag;
+            set
+            {
+                if (activeTag != value)
+                {
+                    activeTag = value;
+                    SaveToPrefs();
+                }
+            }
+        }
+
+        public void AddTag(string tag)
+        {
+            if (!string.IsNullOrEmpty(tag) && !tags.Contains(tag))
+            {
+                tags.Add(tag);
+                SaveToPrefs();
+            }
+        }
+
+        public void RemoveTag(string tag)
+        {
+            if (tags.Remove(tag))
+            {
+                if (activeTag == tag)
+                {
+                    activeTag = "";
+                }
+                SaveToPrefs();
+            }
+        }
+
         private static ConsoleSettings instance;
 
         public static ConsoleSettings Instance
@@ -98,6 +146,19 @@ namespace otps.UnityConsole.Editor
             showFixedTime = UnityEditor.EditorPrefs.GetBool(PrefsKey_ShowFixedTime, false);
             showTimestamp = UnityEditor.EditorPrefs.GetBool(PrefsKey_ShowTimestamp, false);
             searchFilter = UnityEditor.EditorPrefs.GetString(PrefsKey_SearchFilter, "");
+            
+            // 태그 목록 로드 (JSON으로 저장)
+            string tagsJson = UnityEditor.EditorPrefs.GetString(PrefsKey_Tags, "");
+            if (!string.IsNullOrEmpty(tagsJson))
+            {
+                tags = new List<string>(JsonUtility.FromJson<TagListWrapper>(tagsJson).tags ?? new string[0]);
+            }
+            else
+            {
+                tags = new List<string>();
+            }
+            
+            activeTag = UnityEditor.EditorPrefs.GetString(PrefsKey_ActiveTag, "");
         }
 
         private void SaveToPrefs()
@@ -106,6 +167,19 @@ namespace otps.UnityConsole.Editor
             UnityEditor.EditorPrefs.SetBool(PrefsKey_ShowFixedTime, showFixedTime);
             UnityEditor.EditorPrefs.SetBool(PrefsKey_ShowTimestamp, showTimestamp);
             UnityEditor.EditorPrefs.SetString(PrefsKey_SearchFilter, searchFilter);
+            
+            // 태그 목록 저장 (JSON으로 저장)
+            TagListWrapper wrapper = new TagListWrapper { tags = tags.ToArray() };
+            string tagsJson = JsonUtility.ToJson(wrapper);
+            UnityEditor.EditorPrefs.SetString(PrefsKey_Tags, tagsJson);
+            
+            UnityEditor.EditorPrefs.SetString(PrefsKey_ActiveTag, activeTag);
+        }
+        
+        [System.Serializable]
+        private class TagListWrapper
+        {
+            public string[] tags;
         }
     }
 }
