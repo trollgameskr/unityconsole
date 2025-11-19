@@ -45,6 +45,9 @@ namespace otps.UnityConsole.Editor
             settings = ConsoleSettings.Instance;
             Application.logMessageReceived += HandleLog;
             InitializeStyles();
+            
+            // 키보드 이벤트를 받을 수 있도록 설정
+            wantsMouseMove = true;
         }
 
         private void OnDisable()
@@ -119,29 +122,43 @@ namespace otps.UnityConsole.Editor
         private void HandleKeyboardInput()
         {
             Event e = Event.current;
-            if (e.type == EventType.KeyDown && selectedIndex >= 0)
+            
+            // KeyDown 이벤트를 처리
+            if (e.type == EventType.KeyDown)
             {
+                bool handled = false;
+                
                 if (e.keyCode == KeyCode.DownArrow)
                 {
                     // 다음 에러로 이동
-                    int nextErrorIndex = FindNextError(selectedIndex);
-                    if (nextErrorIndex >= 0)
+                    if (selectedIndex >= 0)
                     {
-                        selectedIndex = nextErrorIndex;
-                        e.Use();
-                        Repaint();
+                        int nextErrorIndex = FindNextError(selectedIndex);
+                        if (nextErrorIndex >= 0)
+                        {
+                            selectedIndex = nextErrorIndex;
+                            handled = true;
+                        }
                     }
                 }
                 else if (e.keyCode == KeyCode.UpArrow)
                 {
                     // 이전 에러로 이동
-                    int prevErrorIndex = FindPreviousError(selectedIndex);
-                    if (prevErrorIndex >= 0)
+                    if (selectedIndex >= 0)
                     {
-                        selectedIndex = prevErrorIndex;
-                        e.Use();
-                        Repaint();
+                        int prevErrorIndex = FindPreviousError(selectedIndex);
+                        if (prevErrorIndex >= 0)
+                        {
+                            selectedIndex = prevErrorIndex;
+                            handled = true;
+                        }
                     }
+                }
+                
+                if (handled)
+                {
+                    e.Use();
+                    Repaint();
                 }
             }
         }
@@ -322,14 +339,17 @@ namespace otps.UnityConsole.Editor
                 
                 ConsoleLogEntry selectedEntry = logEntries[selectedIndex];
                 
+                // 메시지와 Stack Trace를 함께 스크롤
+                detailScrollPosition = EditorGUILayout.BeginScrollView(detailScrollPosition);
+                
                 // 메시지 표시 (선택 가능)
                 EditorGUILayout.SelectableLabel(selectedEntry.message, EditorStyles.wordWrappedLabel, GUILayout.ExpandHeight(false));
                 
                 EditorGUILayout.Space(5);
                 
                 // Stack Trace 표시 (각 라인을 클릭 가능하게)
-                detailScrollPosition = EditorGUILayout.BeginScrollView(detailScrollPosition);
                 DrawStackTraceLines(selectedEntry.stackTrace);
+                
                 EditorGUILayout.EndScrollView();
                 
                 EditorGUILayout.EndVertical();
