@@ -241,28 +241,26 @@ namespace otps.UnityConsole.Editor
                 
                 ConsoleLogEntry selectedEntry = logEntries[selectedIndex];
                 
-                // 메시지 표시 (레이블 없이)
-                EditorGUILayout.LabelField(selectedEntry.message, EditorStyles.wordWrappedLabel);
+                // 메시지 표시 (선택 가능)
+                EditorGUILayout.SelectableLabel(selectedEntry.message, EditorStyles.wordWrappedLabel, GUILayout.ExpandHeight(false));
                 
                 EditorGUILayout.Space(5);
                 
-                // Stack Trace 표시 (UnityEngine.Debug:Log 라인 제거)
+                // Stack Trace 표시 (각 라인을 클릭 가능하게)
                 detailScrollPosition = EditorGUILayout.BeginScrollView(detailScrollPosition);
-                string filteredStackTrace = FilterStackTrace(selectedEntry.stackTrace);
-                EditorGUILayout.TextArea(filteredStackTrace, EditorStyles.wordWrappedLabel);
+                DrawStackTraceLines(selectedEntry.stackTrace);
                 EditorGUILayout.EndScrollView();
                 
                 EditorGUILayout.EndVertical();
             }
         }
-
-        private string FilterStackTrace(string stackTrace)
+        
+        private void DrawStackTraceLines(string stackTrace)
         {
             if (string.IsNullOrEmpty(stackTrace))
-                return stackTrace;
+                return;
 
             var lines = stackTrace.Split('\n');
-            var filteredLines = new List<string>();
 
             foreach (var line in lines)
             {
@@ -270,10 +268,65 @@ namespace otps.UnityConsole.Editor
                 if (line.TrimStart().StartsWith("UnityEngine.Debug:Log"))
                     continue;
                 
-                filteredLines.Add(line);
+                // 파일 경로와 라인 번호가 있는지 확인
+                bool hasFileReference = line.Contains(" (at ") && line.Contains(")");
+                
+                if (hasFileReference)
+                {
+                    // 클릭 가능한 버튼으로 표시
+                    GUIStyle buttonStyle = new GUIStyle(EditorStyles.label);
+                    buttonStyle.wordWrap = true;
+                    buttonStyle.normal.textColor = new Color(0.5f, 0.7f, 1.0f); // 파란색 톤
+                    
+                    if (GUILayout.Button(line, buttonStyle))
+                    {
+                        OpenScriptFromStackTraceLine(line);
+                    }
+                    
+                    // 마우스 오버 시 커서 변경
+                    Rect lastRect = GUILayoutUtility.GetLastRect();
+                    if (lastRect.Contains(Event.current.mousePosition))
+                    {
+                        EditorGUIUtility.AddCursorRect(lastRect, MouseCursor.Link);
+                    }
+                }
+                else
+                {
+                    // 파일 참조가 없는 라인은 선택 가능한 레이블로 표시
+                    EditorGUILayout.SelectableLabel(line, EditorStyles.wordWrappedLabel, GUILayout.ExpandHeight(false));
+                }
             }
-
-            return string.Join("\n", filteredLines);
+        }
+        
+        private void OpenScriptFromStackTraceLine(string line)
+        {
+            // 스택 트레이스 형식: "ClassName:MethodName() (at Assets/...path.cs:lineNumber)"
+            int atIndex = line.IndexOf(" (at ");
+            if (atIndex > 0)
+            {
+                int endIndex = line.LastIndexOf(')');
+                if (endIndex > atIndex)
+                {
+                    string pathAndLine = line.Substring(atIndex + 5, endIndex - atIndex - 5);
+                    int colonIndex = pathAndLine.LastIndexOf(':');
+                    
+                    if (colonIndex > 0)
+                    {
+                        string filePath = pathAndLine.Substring(0, colonIndex);
+                        string lineNumberStr = pathAndLine.Substring(colonIndex + 1);
+                        
+                        if (int.TryParse(lineNumberStr, out int lineNumber))
+                        {
+                            // Unity API를 사용하여 파일 열기
+                            var scriptAsset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(filePath);
+                            if (scriptAsset != null)
+                            {
+                                AssetDatabase.OpenAsset(scriptAsset, lineNumber);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         private void OpenScriptFromStackTrace(string stackTrace)
