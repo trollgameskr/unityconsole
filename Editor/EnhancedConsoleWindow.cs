@@ -32,6 +32,8 @@ namespace otps.UnityConsole.Editor
         private GUIStyle oddBackgroundStyle;
 
         private ConsoleSettings settings;
+        
+        private string newTagInput = "";
 
         [MenuItem("Window/Enhanced Console")]
         public static void ShowWindow()
@@ -115,6 +117,7 @@ namespace otps.UnityConsole.Editor
             HandleKeyboardInput();
             
             DrawToolbar();
+            DrawTagBar();
             DrawLogList();
             DrawDetailArea();
         }
@@ -250,6 +253,89 @@ namespace otps.UnityConsole.Editor
             showLog = GUILayout.Toggle(showLog, GetLogCount(LogType.Log).ToString(), EditorStyles.toolbarButton, GUILayout.Width(40));
             showWarning = GUILayout.Toggle(showWarning, GetLogCount(LogType.Warning).ToString(), EditorStyles.toolbarButton, GUILayout.Width(40));
             showError = GUILayout.Toggle(showError, GetLogCount(LogType.Error).ToString(), EditorStyles.toolbarButton, GUILayout.Width(40));
+
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private void DrawTagBar()
+        {
+            EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
+
+            GUILayout.Label("태그:", GUILayout.Width(35));
+            
+            // 새 태그 입력 필드
+            newTagInput = EditorGUILayout.TextField(newTagInput, EditorStyles.toolbarTextField, GUILayout.Width(100));
+            
+            // 태그 추가 버튼
+            if (GUILayout.Button("+", EditorStyles.toolbarButton, GUILayout.Width(25)))
+            {
+                if (!string.IsNullOrEmpty(newTagInput.Trim()))
+                {
+                    settings.AddTag(newTagInput.Trim());
+                    newTagInput = "";
+                    Repaint();
+                }
+            }
+            
+            GUILayout.Space(5);
+            
+            // 활성 태그를 표시하고 비활성화 버튼
+            if (!string.IsNullOrEmpty(settings.ActiveTag))
+            {
+                GUILayout.Label($"필터: {settings.ActiveTag}", GUILayout.Width(100));
+                if (GUILayout.Button("X", EditorStyles.toolbarButton, GUILayout.Width(25)))
+                {
+                    settings.ActiveTag = "";
+                    Repaint();
+                }
+                GUILayout.Space(5);
+            }
+            
+            // 태그 목록 표시 (버튼으로) - 복사본으로 순회하여 안전하게 삭제
+            string tagToRemove = null;
+            foreach (var tag in settings.Tags)
+            {
+                // 활성 태그는 다른 색상으로 표시
+                bool isActive = settings.ActiveTag == tag;
+                Color originalColor = GUI.contentColor;
+                if (isActive)
+                {
+                    GUI.contentColor = Color.cyan;
+                }
+                
+                if (GUILayout.Button(tag, EditorStyles.toolbarButton, GUILayout.MinWidth(50)))
+                {
+                    // 태그 클릭 시 필터 활성화/비활성화 토글
+                    if (settings.ActiveTag == tag)
+                    {
+                        settings.ActiveTag = "";
+                    }
+                    else
+                    {
+                        settings.ActiveTag = tag;
+                    }
+                    Repaint();
+                }
+                
+                GUI.contentColor = originalColor;
+                
+                // 태그 삭제 버튼
+                if (GUILayout.Button("-", EditorStyles.toolbarButton, GUILayout.Width(20)))
+                {
+                    tagToRemove = tag;
+                }
+                
+                GUILayout.Space(2);
+            }
+            
+            // 루프 밖에서 태그 삭제
+            if (tagToRemove != null)
+            {
+                settings.RemoveTag(tagToRemove);
+                Repaint();
+            }
+            
+            GUILayout.FlexibleSpace();
 
             EditorGUILayout.EndHorizontal();
         }
@@ -480,6 +566,7 @@ namespace otps.UnityConsole.Editor
             
             // 검색 필터 적용
             bool hasSearchFilter = !string.IsNullOrEmpty(settings.SearchFilter);
+            bool hasTagFilter = !string.IsNullOrEmpty(settings.ActiveTag);
             
             if (collapse)
             {
@@ -489,6 +576,10 @@ namespace otps.UnityConsole.Editor
                 {
                     // 검색 필터 확인 (대소문자 구분 없이)
                     if (hasSearchFilter && entry.message.IndexOf(settings.SearchFilter, System.StringComparison.OrdinalIgnoreCase) == -1)
+                        continue;
+                    
+                    // 태그 필터 확인 (대소문자 구분 없이)
+                    if (hasTagFilter && entry.message.IndexOf(settings.ActiveTag, System.StringComparison.OrdinalIgnoreCase) == -1)
                         continue;
                     
                     if (uniqueMessages.Add(entry.message))
@@ -503,6 +594,10 @@ namespace otps.UnityConsole.Editor
                 {
                     // 검색 필터 확인 (대소문자 구분 없이)
                     if (hasSearchFilter && entry.message.IndexOf(settings.SearchFilter, System.StringComparison.OrdinalIgnoreCase) == -1)
+                        continue;
+                    
+                    // 태그 필터 확인 (대소문자 구분 없이)
+                    if (hasTagFilter && entry.message.IndexOf(settings.ActiveTag, System.StringComparison.OrdinalIgnoreCase) == -1)
                         continue;
                     
                     filtered.Add(entry);
