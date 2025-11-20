@@ -78,15 +78,31 @@ namespace otps.UnityConsole.Editor
             
             // 키보드 이벤트를 받을 수 있도록 설정
             wantsMouseMove = true;
+            
+            // 창이 비활성 상태일 때도 업데이트를 위해 EditorApplication.update 이벤트 등록
+            EditorApplication.update += OnEditorUpdate;
         }
 
         private void OnDisable()
         {
             Application.logMessageReceived -= HandleLog;
+            EditorApplication.update -= OnEditorUpdate;
             
             // 메모리 정리
             styledTextStyleCache?.Clear();
             buttonStyleCache?.Clear();
+        }
+        
+        private bool needsRepaint = false;
+        
+        private void OnEditorUpdate()
+        {
+            // 새로운 로그가 추가되었을 때 창이 비활성 상태여도 다시 그리기
+            if (needsRepaint)
+            {
+                needsRepaint = false;
+                Repaint();
+            }
         }
 
         private void InitializeStyles()
@@ -173,6 +189,8 @@ namespace otps.UnityConsole.Editor
                 };
             }
 
+            // 창이 비활성 상태일 때도 업데이트되도록 플래그 설정
+            needsRepaint = true;
             Repaint();
         }
         
@@ -182,6 +200,7 @@ namespace otps.UnityConsole.Editor
             cachedLogCount = -1;
             cachedWarningCount = -1;
             cachedErrorCount = -1;
+            // 스크롤 위치는 유지 - wasScrollAtBottom 플래그만 사용
         }
 
         private void OnGUI()
@@ -220,6 +239,7 @@ namespace otps.UnityConsole.Editor
                         if (nextErrorIndex >= 0)
                         {
                             selectedIndex = nextErrorIndex;
+                            ScrollToSelectedLog();
                             handled = true;
                         }
                     }
@@ -233,6 +253,7 @@ namespace otps.UnityConsole.Editor
                         if (prevErrorIndex >= 0)
                         {
                             selectedIndex = prevErrorIndex;
+                            ScrollToSelectedLog();
                             handled = true;
                         }
                     }
@@ -242,6 +263,37 @@ namespace otps.UnityConsole.Editor
                 {
                     e.Use();
                     Repaint();
+                }
+            }
+        }
+        
+        private void ScrollToSelectedLog()
+        {
+            if (selectedIndex < 0 || selectedIndex >= logEntries.Count)
+                return;
+            
+            // 선택된 로그를 filteredEntries에서 찾기
+            List<ConsoleLogEntry> filteredEntries = GetFilteredEntries();
+            ConsoleLogEntry selectedEntry = logEntries[selectedIndex];
+            int filteredIndex = filteredEntries.IndexOf(selectedEntry);
+            
+            if (filteredIndex >= 0)
+            {
+                // 선택된 로그가 화면에 보이도록 스크롤 위치 조정
+                float listHeight = position.height * 0.6f;
+                float targetScrollY = filteredIndex * LogEntryHeight;
+                float currentScrollY = scrollPosition.y;
+                
+                // 선택된 항목이 화면 밖에 있으면 스크롤
+                if (targetScrollY < currentScrollY)
+                {
+                    // 위쪽에 있으면
+                    scrollPosition.y = targetScrollY;
+                }
+                else if (targetScrollY + LogEntryHeight > currentScrollY + listHeight)
+                {
+                    // 아래쪽에 있으면
+                    scrollPosition.y = targetScrollY + LogEntryHeight - listHeight;
                 }
             }
         }
@@ -573,12 +625,12 @@ namespace otps.UnityConsole.Editor
         {
             if (selectedIndex >= 0 && selectedIndex < logEntries.Count)
             {
-                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandHeight(true));
                 
                 ConsoleLogEntry selectedEntry = logEntries[selectedIndex];
                 
                 // 메시지와 Stack Trace를 함께 스크롤
-                detailScrollPosition = EditorGUILayout.BeginScrollView(detailScrollPosition);
+                detailScrollPosition = EditorGUILayout.BeginScrollView(detailScrollPosition, GUILayout.ExpandHeight(true));
                 
                 // 메시지 표시 (선택 가능)
                 EditorGUILayout.SelectableLabel(selectedEntry.message, EditorStyles.wordWrappedLabel, GUILayout.ExpandHeight(false));
