@@ -121,6 +121,8 @@ namespace otps.UnityConsole.Editor
             Texture2D texture = new Texture2D(width, height);
             texture.SetPixels(pixels);
             texture.Apply();
+            // 에디터 재생 시 텍스처가 파괴되지 않도록 설정
+            texture.hideFlags = HideFlags.DontUnloadUnusedAsset;
             return texture;
         }
 
@@ -174,7 +176,10 @@ namespace otps.UnityConsole.Editor
 
         private void OnGUI()
         {
-            if (logStyle == null)
+            // 스타일 또는 텍스처가 손실된 경우 재초기화
+            if (logStyle == null || evenBackgroundStyle == null || oddBackgroundStyle == null || 
+                selectedBackgroundStyle == null || evenBackgroundStyle.normal.background == null ||
+                oddBackgroundStyle.normal.background == null || selectedBackgroundStyle.normal.background == null)
             {
                 InitializeStyles();
             }
