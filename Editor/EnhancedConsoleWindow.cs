@@ -63,7 +63,7 @@ namespace otps.UnityConsole.Editor
         private Dictionary<int, GUIStyle> styledTextStyleCache = new Dictionary<int, GUIStyle>();
         private Dictionary<int, GUIStyle> buttonStyleCache = new Dictionary<int, GUIStyle>();
 
-        [MenuItem("Window/Enhanced Console")]
+        [MenuItem("Window/Enhanced Console %#&c")]
         public static void ShowWindow()
         {
             var window = GetWindow<EnhancedConsoleWindow>("Enhanced Console");
