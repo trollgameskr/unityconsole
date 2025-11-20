@@ -32,6 +32,11 @@ namespace otps.UnityConsole.Editor
         private GUIStyle oddBackgroundStyle;
         private GUIStyle selectedBackgroundStyle;
 
+        // 로그 레벨별 아이콘
+        private GUIContent logIcon;
+        private GUIContent warningIcon;
+        private GUIContent errorIcon;
+
         private ConsoleSettings settings;
         
         private bool wasScrollAtBottom = true;
@@ -105,6 +110,11 @@ namespace otps.UnityConsole.Editor
 
             selectedBackgroundStyle = new GUIStyle();
             selectedBackgroundStyle.normal.background = MakeTexture(2, 2, new Color(0.3f, 0.5f, 0.7f, 1f)); // 연한 파랑색
+            
+            // 로그 레벨별 아이콘 로드
+            logIcon = EditorGUIUtility.IconContent("console.infoicon.sml");
+            warningIcon = EditorGUIUtility.IconContent("console.warnicon.sml");
+            errorIcon = EditorGUIUtility.IconContent("console.erroricon.sml");
             
             // 스타일 캐시 초기화
             styledTextStyleCache?.Clear();
@@ -327,9 +337,14 @@ namespace otps.UnityConsole.Editor
 
             GUILayout.Space(5);
 
-            bool newShowLog = GUILayout.Toggle(showLog, GetLogCount(LogType.Log).ToString(), EditorStyles.toolbarButton, GUILayout.Width(40));
-            bool newShowWarning = GUILayout.Toggle(showWarning, GetLogCount(LogType.Warning).ToString(), EditorStyles.toolbarButton, GUILayout.Width(40));
-            bool newShowError = GUILayout.Toggle(showError, GetLogCount(LogType.Error).ToString(), EditorStyles.toolbarButton, GUILayout.Width(40));
+            // 로그 타입별 필터 버튼 (아이콘과 개수 표시)
+            GUIContent logContent = new GUIContent(GetLogCount(LogType.Log).ToString(), logIcon.image);
+            GUIContent warningContent = new GUIContent(GetLogCount(LogType.Warning).ToString(), warningIcon.image);
+            GUIContent errorContent = new GUIContent(GetLogCount(LogType.Error).ToString(), errorIcon.image);
+            
+            bool newShowLog = GUILayout.Toggle(showLog, logContent, EditorStyles.toolbarButton, GUILayout.Width(40));
+            bool newShowWarning = GUILayout.Toggle(showWarning, warningContent, EditorStyles.toolbarButton, GUILayout.Width(40));
+            bool newShowError = GUILayout.Toggle(showError, errorContent, EditorStyles.toolbarButton, GUILayout.Width(40));
             
             if (newShowLog != showLog || newShowWarning != showWarning || newShowError != showError)
             {
@@ -492,6 +507,10 @@ namespace otps.UnityConsole.Editor
                 }
 
                 EditorGUILayout.BeginHorizontal(backgroundStyle, GUILayout.Height(LogEntryHeight));
+
+                // 로그 타입 아이콘 표시
+                GUIContent icon = GetIconForLogType(entry.logType);
+                GUILayout.Label(icon, styledTextStyle, GUILayout.Width(20));
 
                 // Frame Count 컬럼 (설정에 따라 표시)
                 if (settings.ShowFrameCount)
@@ -790,6 +809,21 @@ namespace otps.UnityConsole.Editor
                     return errorStyle;
                 default:
                     return logStyle;
+            }
+        }
+
+        private GUIContent GetIconForLogType(LogType type)
+        {
+            switch (type)
+            {
+                case LogType.Warning:
+                    return warningIcon;
+                case LogType.Error:
+                case LogType.Exception:
+                case LogType.Assert:
+                    return errorIcon;
+                default:
+                    return logIcon;
             }
         }
 
