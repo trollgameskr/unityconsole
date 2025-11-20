@@ -15,6 +15,8 @@ namespace otps.UnityConsole.Editor
         private const string PrefsKey_SearchFilter = "UnityConsole_SearchFilter";
         private const string PrefsKey_Tags = "UnityConsole_Tags";
         private const string PrefsKey_ActiveTag = "UnityConsole_ActiveTag";
+        private const string PrefsKey_Channels = "UnityConsole_Channels";
+        private const string PrefsKey_ActiveChannels = "UnityConsole_ActiveChannels";
 
         [SerializeField]
         private bool showFrameCount = true;
@@ -33,6 +35,12 @@ namespace otps.UnityConsole.Editor
         
         [SerializeField]
         private string activeTag = "";
+        
+        [SerializeField]
+        private List<string> channels = new List<string>();
+        
+        [SerializeField]
+        private HashSet<string> activeChannels = new HashSet<string>();
 
         public bool ShowFrameCount
         {
@@ -124,6 +132,81 @@ namespace otps.UnityConsole.Editor
                 SaveToPrefs();
             }
         }
+        
+        public List<string> Channels
+        {
+            get => channels;
+        }
+        
+        public HashSet<string> ActiveChannels
+        {
+            get => activeChannels;
+        }
+        
+        public void AddChannel(string channel)
+        {
+            if (!string.IsNullOrEmpty(channel) && !channels.Contains(channel))
+            {
+                channels.Add(channel);
+                // 새로 추가된 채널은 기본적으로 활성화
+                activeChannels.Add(channel);
+                SaveToPrefs();
+            }
+        }
+        
+        public void RemoveChannel(string channel)
+        {
+            if (channels.Remove(channel))
+            {
+                activeChannels.Remove(channel);
+                SaveToPrefs();
+            }
+        }
+        
+        public void SetChannelActive(string channel, bool active)
+        {
+            if (active)
+            {
+                if (activeChannels.Add(channel))
+                {
+                    SaveToPrefs();
+                }
+            }
+            else
+            {
+                if (activeChannels.Remove(channel))
+                {
+                    SaveToPrefs();
+                }
+            }
+        }
+        
+        public bool IsChannelActive(string channel)
+        {
+            return activeChannels.Contains(channel);
+        }
+        
+        /// <summary>
+        /// 발견된 모든 채널을 자동으로 등록 (중복 방지)
+        /// </summary>
+        public void RegisterChannelsIfNeeded(List<string> discoveredChannels)
+        {
+            bool changed = false;
+            foreach (string channel in discoveredChannels)
+            {
+                if (!string.IsNullOrEmpty(channel) && !channels.Contains(channel))
+                {
+                    channels.Add(channel);
+                    activeChannels.Add(channel); // 새로 발견된 채널은 기본적으로 활성화
+                    changed = true;
+                }
+            }
+            
+            if (changed)
+            {
+                SaveToPrefs();
+            }
+        }
 
         private static ConsoleSettings instance;
 
@@ -159,6 +242,29 @@ namespace otps.UnityConsole.Editor
             }
             
             activeTag = UnityEditor.EditorPrefs.GetString(PrefsKey_ActiveTag, "");
+            
+            // 채널 목록 로드 (JSON으로 저장)
+            string channelsJson = UnityEditor.EditorPrefs.GetString(PrefsKey_Channels, "");
+            if (!string.IsNullOrEmpty(channelsJson))
+            {
+                channels = new List<string>(JsonUtility.FromJson<ChannelListWrapper>(channelsJson).channels ?? new string[0]);
+            }
+            else
+            {
+                channels = new List<string>();
+            }
+            
+            // 활성 채널 목록 로드 (JSON으로 저장)
+            string activeChannelsJson = UnityEditor.EditorPrefs.GetString(PrefsKey_ActiveChannels, "");
+            if (!string.IsNullOrEmpty(activeChannelsJson))
+            {
+                string[] activeChannelArray = JsonUtility.FromJson<ChannelListWrapper>(activeChannelsJson).channels ?? new string[0];
+                activeChannels = new HashSet<string>(activeChannelArray);
+            }
+            else
+            {
+                activeChannels = new HashSet<string>();
+            }
         }
 
         private void SaveToPrefs()
@@ -174,12 +280,29 @@ namespace otps.UnityConsole.Editor
             UnityEditor.EditorPrefs.SetString(PrefsKey_Tags, tagsJson);
             
             UnityEditor.EditorPrefs.SetString(PrefsKey_ActiveTag, activeTag);
+            
+            // 채널 목록 저장 (JSON으로 저장)
+            ChannelListWrapper channelWrapper = new ChannelListWrapper { channels = channels.ToArray() };
+            string channelsJson = JsonUtility.ToJson(channelWrapper);
+            UnityEditor.EditorPrefs.SetString(PrefsKey_Channels, channelsJson);
+            
+            // 활성 채널 목록 저장 (JSON으로 저장)
+            List<string> activeChannelList = new List<string>(activeChannels);
+            ChannelListWrapper activeChannelWrapper = new ChannelListWrapper { channels = activeChannelList.ToArray() };
+            string activeChannelsJson = JsonUtility.ToJson(activeChannelWrapper);
+            UnityEditor.EditorPrefs.SetString(PrefsKey_ActiveChannels, activeChannelsJson);
         }
         
         [System.Serializable]
         private class TagListWrapper
         {
             public string[] tags;
+        }
+        
+        [System.Serializable]
+        private class ChannelListWrapper
+        {
+            public string[] channels;
         }
     }
 }

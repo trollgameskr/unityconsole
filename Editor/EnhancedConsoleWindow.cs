@@ -55,6 +55,7 @@ namespace otps.UnityConsole.Editor
         private bool lastShowLog = true;
         private bool lastShowWarning = true;
         private bool lastShowError = true;
+        private HashSet<string> lastActiveChannels = null;
         
         // 가상 스크롤링을 위한 변수
         private const float LogEntryHeight = 20f;
@@ -154,7 +155,16 @@ namespace otps.UnityConsole.Editor
                 }
             }
 
-            logEntries.Add(new ConsoleLogEntry(logString, stackTrace, type));
+            ConsoleLogEntry newEntry = new ConsoleLogEntry(logString, stackTrace, type);
+            logEntries.Add(newEntry);
+            
+            // 발견된 채널을 자동으로 등록
+            List<string> discoveredChannels = newEntry.GetChannels();
+            if (discoveredChannels.Count > 0)
+            {
+                settings.RegisterChannelsIfNeeded(discoveredChannels);
+            }
+            
             InvalidateCache();
 
             if (errorPause && type == LogType.Error)
@@ -197,6 +207,7 @@ namespace otps.UnityConsole.Editor
             HandleKeyboardInput();
             
             DrawToolbar();
+            DrawChannelBar();
             DrawTagBar();
             DrawLogList();
             DrawDetailArea();
@@ -353,6 +364,99 @@ namespace otps.UnityConsole.Editor
                 showError = newShowError;
                 InvalidateCache();
             }
+
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private void DrawChannelBar()
+        {
+            EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
+
+            GUILayout.Label("채널:", GUILayout.Width(35));
+            
+            // 채널 필터 상태 표시
+            int activeChannelCount = settings.ActiveChannels.Count;
+            int totalChannelCount = settings.Channels.Count;
+            
+            if (totalChannelCount > 0)
+            {
+                GUILayout.Label($"({activeChannelCount}/{totalChannelCount})", GUILayout.Width(50));
+            }
+            
+            GUILayout.Space(5);
+            
+            // 모두 활성화 버튼
+            if (GUILayout.Button("전체선택", EditorStyles.toolbarButton, GUILayout.Width(60)))
+            {
+                foreach (var channel in settings.Channels)
+                {
+                    settings.SetChannelActive(channel, true);
+                }
+                InvalidateCache();
+                Repaint();
+            }
+            
+            // 모두 비활성화 버튼
+            if (GUILayout.Button("전체해제", EditorStyles.toolbarButton, GUILayout.Width(60)))
+            {
+                foreach (var channel in settings.Channels)
+                {
+                    settings.SetChannelActive(channel, false);
+                }
+                InvalidateCache();
+                Repaint();
+            }
+            
+            GUILayout.Space(5);
+            
+            // 채널 목록 표시 (토글 버튼으로) - 복사본으로 순회하여 안전하게 삭제
+            string channelToRemove = null;
+            List<string> channelsCopy = new List<string>(settings.Channels);
+            
+            foreach (var channel in channelsCopy)
+            {
+                bool isActive = settings.IsChannelActive(channel);
+                
+                // 활성/비활성에 따라 색상 변경
+                Color originalColor = GUI.backgroundColor;
+                if (isActive)
+                {
+                    GUI.backgroundColor = new Color(0.5f, 0.8f, 0.5f); // 녹색 톤
+                }
+                else
+                {
+                    GUI.backgroundColor = new Color(0.6f, 0.6f, 0.6f); // 회색 톤
+                }
+                
+                // 채널 토글 버튼
+                bool newActive = GUILayout.Toggle(isActive, channel, EditorStyles.toolbarButton, GUILayout.MinWidth(50));
+                if (newActive != isActive)
+                {
+                    settings.SetChannelActive(channel, newActive);
+                    InvalidateCache();
+                    Repaint();
+                }
+                
+                GUI.backgroundColor = originalColor;
+                
+                // 채널 삭제 버튼
+                if (GUILayout.Button("X", EditorStyles.toolbarButton, GUILayout.Width(20)))
+                {
+                    channelToRemove = channel;
+                }
+                
+                GUILayout.Space(2);
+            }
+            
+            // 루프 밖에서 채널 삭제
+            if (channelToRemove != null)
+            {
+                settings.RemoveChannel(channelToRemove);
+                InvalidateCache();
+                Repaint();
+            }
+            
+            GUILayout.FlexibleSpace();
 
             EditorGUILayout.EndHorizontal();
         }
@@ -715,13 +819,17 @@ namespace otps.UnityConsole.Editor
         private List<ConsoleLogEntry> GetFilteredEntries()
         {
             // 캐시가 유효한지 확인
+            bool channelsChanged = lastActiveChannels == null || 
+                                   !lastActiveChannels.SetEquals(settings.ActiveChannels);
+            
             if (cachedFilteredEntries != null && 
                 lastSearchFilter == settings.SearchFilter &&
                 lastActiveTag == settings.ActiveTag &&
                 lastCollapse == collapse &&
                 lastShowLog == showLog &&
                 lastShowWarning == showWarning &&
-                lastShowError == showError)
+                lastShowError == showError &&
+                !channelsChanged)
             {
                 return cachedFilteredEntries;
             }
@@ -733,10 +841,12 @@ namespace otps.UnityConsole.Editor
             lastShowLog = showLog;
             lastShowWarning = showWarning;
             lastShowError = showError;
+            lastActiveChannels = new HashSet<string>(settings.ActiveChannels);
             
             List<ConsoleLogEntry> filtered = new List<ConsoleLogEntry>();
             
-            // 검색 필터 적용
+            // 채널 필터 적용 여부 확인
+            bool hasChannelFilter = settings.Channels.Count > 0 && settings.ActiveChannels.Count > 0;
             bool hasSearchFilter = !string.IsNullOrEmpty(settings.SearchFilter);
             bool hasTagFilter = !string.IsNullOrEmpty(settings.ActiveTag);
             
@@ -746,11 +856,35 @@ namespace otps.UnityConsole.Editor
 
                 foreach (var entry in logEntries)
                 {
-                    // 검색 필터 확인 (대소문자 구분 없이)
+                    // 1. 채널 필터 먼저 적용 (채널이 등록되어 있을 때만)
+                    if (hasChannelFilter)
+                    {
+                        List<string> entryChannels = entry.GetChannels();
+                        
+                        // 로그에 채널이 없으면 제외
+                        if (entryChannels.Count == 0)
+                            continue;
+                        
+                        // 활성 채널 중 하나라도 포함하는지 확인
+                        bool hasActiveChannel = false;
+                        foreach (string channel in entryChannels)
+                        {
+                            if (settings.IsChannelActive(channel))
+                            {
+                                hasActiveChannel = true;
+                                break;
+                            }
+                        }
+                        
+                        if (!hasActiveChannel)
+                            continue;
+                    }
+                    
+                    // 2. 검색 필터 확인 (대소문자 구분 없이)
                     if (hasSearchFilter && entry.message.IndexOf(settings.SearchFilter, System.StringComparison.OrdinalIgnoreCase) == -1)
                         continue;
                     
-                    // 태그 필터 확인 (대소문자 구분 없이)
+                    // 3. 태그 필터 확인 (대소문자 구분 없이)
                     if (hasTagFilter && entry.message.IndexOf(settings.ActiveTag, System.StringComparison.OrdinalIgnoreCase) == -1)
                         continue;
                     
@@ -764,11 +898,35 @@ namespace otps.UnityConsole.Editor
             {
                 foreach (var entry in logEntries)
                 {
-                    // 검색 필터 확인 (대소문자 구분 없이)
+                    // 1. 채널 필터 먼저 적용 (채널이 등록되어 있을 때만)
+                    if (hasChannelFilter)
+                    {
+                        List<string> entryChannels = entry.GetChannels();
+                        
+                        // 로그에 채널이 없으면 제외
+                        if (entryChannels.Count == 0)
+                            continue;
+                        
+                        // 활성 채널 중 하나라도 포함하는지 확인
+                        bool hasActiveChannel = false;
+                        foreach (string channel in entryChannels)
+                        {
+                            if (settings.IsChannelActive(channel))
+                            {
+                                hasActiveChannel = true;
+                                break;
+                            }
+                        }
+                        
+                        if (!hasActiveChannel)
+                            continue;
+                    }
+                    
+                    // 2. 검색 필터 확인 (대소문자 구분 없이)
                     if (hasSearchFilter && entry.message.IndexOf(settings.SearchFilter, System.StringComparison.OrdinalIgnoreCase) == -1)
                         continue;
                     
-                    // 태그 필터 확인 (대소문자 구분 없이)
+                    // 3. 태그 필터 확인 (대소문자 구분 없이)
                     if (hasTagFilter && entry.message.IndexOf(settings.ActiveTag, System.StringComparison.OrdinalIgnoreCase) == -1)
                         continue;
                     
