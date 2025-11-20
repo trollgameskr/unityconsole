@@ -5,6 +5,7 @@ Unity 기본 콘솔에 Time.frameCount를 추가한 확장 콘솔 패키지입�
 ## 기능
 
 - Unity 기본 콘솔과 유사한 UI
+- **로그 레벨 아이콘**: 로그 타입(Log, Warning, Error)별로 직관적인 아이콘 표시
 - 홀수/짝수 행 배경색 구분으로 가독성 향상 (회색/진한회색)
 - Time.frameCount 컬럼 표시/숨김 설정
 - Time.fixedTime 표시/숨김 설정
