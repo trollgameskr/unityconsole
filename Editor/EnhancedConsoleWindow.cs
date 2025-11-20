@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
 
@@ -42,6 +43,9 @@ namespace otps.UnityConsole.Editor
         private bool wasScrollAtBottom = true;
         
         private string newTagInput = "";
+        
+        // 채널 파싱을 위한 정규식 (캐싱)
+        private static readonly Regex channelRegex = new Regex(@"\[([^\[\]]+)\]", RegexOptions.Compiled);
 
         // 성능 최적화: 캐싱
         private const int MaxLogEntries = 10000; // 최대 로그 개수 제한
@@ -361,17 +365,17 @@ namespace otps.UnityConsole.Editor
         {
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
 
-            GUILayout.Label("태그:", GUILayout.Width(35));
+            GUILayout.Label("채널:", GUILayout.Width(35));
             
-            // 새 태그 입력 필드
+            // 새 채널 입력 필드
             newTagInput = EditorGUILayout.TextField(newTagInput, EditorStyles.toolbarTextField, GUILayout.Width(100));
             
-            // 태그 추가 버튼
+            // 채널 추가 버튼
             if (GUILayout.Button("+", EditorStyles.toolbarButton, GUILayout.Width(25)))
             {
                 if (!string.IsNullOrEmpty(newTagInput.Trim()))
                 {
-                    settings.AddTag(newTagInput.Trim());
+                    settings.AddChannel(newTagInput.Trim());
                     newTagInput = "";
                     Repaint();
                 }
@@ -379,61 +383,61 @@ namespace otps.UnityConsole.Editor
             
             GUILayout.Space(5);
             
-            // 활성 태그를 표시하고 비활성화 버튼
-            if (!string.IsNullOrEmpty(settings.ActiveTag))
+            // 활성 채널 개수 표시
+            if (settings.ActiveChannels.Count > 0)
             {
-                GUILayout.Label($"필터: {settings.ActiveTag}", GUILayout.Width(100));
-                if (GUILayout.Button("X", EditorStyles.toolbarButton, GUILayout.Width(25)))
+                GUILayout.Label($"활성: {settings.ActiveChannels.Count}", GUILayout.Width(60));
+                if (GUILayout.Button("모두 해제", EditorStyles.toolbarButton, GUILayout.Width(60)))
                 {
-                    settings.ActiveTag = "";
+                    foreach (var channel in new List<string>(settings.ActiveChannels))
+                    {
+                        settings.SetChannelActive(channel, false);
+                    }
                     InvalidateCache();
                     Repaint();
                 }
                 GUILayout.Space(5);
             }
             
-            // 태그 목록 표시 (버튼으로) - 복사본으로 순회하여 안전하게 삭제
-            string tagToRemove = null;
-            foreach (var tag in settings.Tags)
+            // 채널 목록 표시 (버튼으로) - 복사본으로 순회하여 안전하게 삭제
+            string channelToRemove = null;
+            foreach (var channel in settings.Tags)
             {
-                // 활성 태그는 다른 색상으로 표시
-                bool isActive = settings.ActiveTag == tag;
-                Color originalColor = GUI.contentColor;
+                // 활성 채널은 다른 색상으로 표시
+                bool isActive = settings.IsChannelActive(channel);
+                Color originalColor = GUI.backgroundColor;
                 if (isActive)
                 {
-                    GUI.contentColor = Color.cyan;
+                    GUI.backgroundColor = new Color(0.3f, 0.8f, 0.3f); // 녹색
+                }
+                else
+                {
+                    GUI.backgroundColor = new Color(0.7f, 0.7f, 0.7f); // 회색
                 }
                 
-                if (GUILayout.Button(tag, EditorStyles.toolbarButton, GUILayout.MinWidth(50)))
+                if (GUILayout.Button(channel, EditorStyles.toolbarButton, GUILayout.MinWidth(50)))
                 {
-                    // 태그 클릭 시 필터 활성화/비활성화 토글
-                    if (settings.ActiveTag == tag)
-                    {
-                        settings.ActiveTag = "";
-                    }
-                    else
-                    {
-                        settings.ActiveTag = tag;
-                    }
+                    // 채널 클릭 시 활성화/비활성화 토글
+                    settings.ToggleChannel(channel);
                     InvalidateCache();
                     Repaint();
                 }
                 
-                GUI.contentColor = originalColor;
+                GUI.backgroundColor = originalColor;
                 
-                // 태그 삭제 버튼
+                // 채널 삭제 버튼
                 if (GUILayout.Button("-", EditorStyles.toolbarButton, GUILayout.Width(20)))
                 {
-                    tagToRemove = tag;
+                    channelToRemove = channel;
                 }
                 
                 GUILayout.Space(2);
             }
             
-            // 루프 밖에서 태그 삭제
-            if (tagToRemove != null)
+            // 루프 밖에서 채널 삭제
+            if (channelToRemove != null)
             {
-                settings.RemoveTag(tagToRemove);
+                settings.RemoveChannel(channelToRemove);
                 InvalidateCache();
                 Repaint();
             }
@@ -712,6 +716,67 @@ namespace otps.UnityConsole.Editor
             }
         }
 
+        /// <summary>
+        /// 로그 메시지에서 [채널명] 형식의 채널 태그를 추출합니다.
+        /// </summary>
+        /// <param name="message">로그 메시지</param>
+        /// <returns>추출된 채널 목록</returns>
+        private List<string> ExtractChannels(string message)
+        {
+            List<string> channels = new List<string>();
+            MatchCollection matches = channelRegex.Matches(message);
+            
+            foreach (Match match in matches)
+            {
+                if (match.Success && match.Groups.Count > 1)
+                {
+                    string channel = match.Groups[1].Value;
+                    if (!string.IsNullOrEmpty(channel))
+                    {
+                        channels.Add(channel);
+                    }
+                }
+            }
+            
+            return channels;
+        }
+
+        /// <summary>
+        /// 로그 엔트리가 채널 필터를 통과하는지 확인합니다.
+        /// 활성화된 채널이 없으면 모든 로그를 표시합니다.
+        /// 활성화된 채널이 있으면, 로그에 포함된 채널 중 하나라도 활성화되어 있으면 표시합니다.
+        /// </summary>
+        /// <param name="entry">로그 엔트리</param>
+        /// <returns>필터 통과 여부</returns>
+        private bool PassesChannelFilter(ConsoleLogEntry entry)
+        {
+            // 활성화된 채널이 없으면 모든 로그 표시
+            if (settings.ActiveChannels.Count == 0)
+            {
+                return true;
+            }
+
+            // 로그 메시지에서 채널 추출
+            List<string> channels = ExtractChannels(entry.message);
+
+            // 채널이 없는 로그는 숨김
+            if (channels.Count == 0)
+            {
+                return false;
+            }
+
+            // 하나라도 활성화된 채널이 포함되어 있으면 표시
+            foreach (var channel in channels)
+            {
+                if (settings.IsChannelActive(channel))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private List<ConsoleLogEntry> GetFilteredEntries()
         {
             // 캐시가 유효한지 확인
@@ -750,8 +815,12 @@ namespace otps.UnityConsole.Editor
                     if (hasSearchFilter && entry.message.IndexOf(settings.SearchFilter, System.StringComparison.OrdinalIgnoreCase) == -1)
                         continue;
                     
-                    // 태그 필터 확인 (대소문자 구분 없이)
+                    // 태그 필터 확인 (대소문자 구분 없이) - 하위 호환성 유지
                     if (hasTagFilter && entry.message.IndexOf(settings.ActiveTag, System.StringComparison.OrdinalIgnoreCase) == -1)
+                        continue;
+                    
+                    // 채널 필터 확인
+                    if (!PassesChannelFilter(entry))
                         continue;
                     
                     if (uniqueMessages.Add(entry.message))
@@ -768,8 +837,12 @@ namespace otps.UnityConsole.Editor
                     if (hasSearchFilter && entry.message.IndexOf(settings.SearchFilter, System.StringComparison.OrdinalIgnoreCase) == -1)
                         continue;
                     
-                    // 태그 필터 확인 (대소문자 구분 없이)
+                    // 태그 필터 확인 (대소문자 구분 없이) - 하위 호환성 유지
                     if (hasTagFilter && entry.message.IndexOf(settings.ActiveTag, System.StringComparison.OrdinalIgnoreCase) == -1)
+                        continue;
+                    
+                    // 채널 필터 확인
+                    if (!PassesChannelFilter(entry))
                         continue;
                     
                     filtered.Add(entry);
@@ -778,6 +851,7 @@ namespace otps.UnityConsole.Editor
 
             cachedFilteredEntries = filtered;
             return filtered;
+        }
         }
 
         private bool ShouldShowLog(LogType type)
