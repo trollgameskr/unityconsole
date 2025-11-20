@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 namespace otps.UnityConsole.Editor
 {
@@ -10,7 +12,6 @@ namespace otps.UnityConsole.Editor
     public class EnhancedConsoleWindow : EditorWindow
     {
         private List<ConsoleLogEntry> logEntries = new List<ConsoleLogEntry>();
-        private Vector2 scrollPosition;
         private bool collapse = false;
         private bool clearOnPlay = false;
         private bool errorPause = false;
@@ -20,22 +21,9 @@ namespace otps.UnityConsole.Editor
         private bool showError = true;
 
         private int selectedIndex = -1;
-        private Vector2 detailScrollPosition;
         
         private double lastClickTime;
         private int lastClickedIndex = -1;
-
-        private GUIStyle logStyle;
-        private GUIStyle warningStyle;
-        private GUIStyle errorStyle;
-        private GUIStyle evenBackgroundStyle;
-        private GUIStyle oddBackgroundStyle;
-        private GUIStyle selectedBackgroundStyle;
-
-        // 로그 레벨별 아이콘
-        private GUIContent logIcon;
-        private GUIContent warningIcon;
-        private GUIContent errorIcon;
 
         private ConsoleSettings settings;
         
@@ -44,7 +32,7 @@ namespace otps.UnityConsole.Editor
         private string newTagInput = "";
 
         // 성능 최적화: 캐싱
-        private const int MaxLogEntries = 10000; // 최대 로그 개수 제한
+        private const int MaxLogEntries = 10000;
         private List<ConsoleLogEntry> cachedFilteredEntries = null;
         private int cachedLogCount = -1;
         private int cachedWarningCount = -1;
@@ -56,12 +44,18 @@ namespace otps.UnityConsole.Editor
         private bool lastShowWarning = true;
         private bool lastShowError = true;
         
-        // 가상 스크롤링을 위한 변수
-        private const float LogEntryHeight = 20f;
-        
-        // GUIStyle 재사용을 위한 캐시
-        private Dictionary<int, GUIStyle> styledTextStyleCache = new Dictionary<int, GUIStyle>();
-        private Dictionary<int, GUIStyle> buttonStyleCache = new Dictionary<int, GUIStyle>();
+        // UI Elements
+        private ListView logListView;
+        private ScrollView detailScrollView;
+        private Label logCountLabel;
+        private Label warningCountLabel;
+        private Label errorCountLabel;
+        private TextField searchField;
+        private TextField tagInputField;
+        private VisualElement tagContainer;
+        private Label activeTagLabel;
+        private Button clearActiveTagButton;
+        private Toolbar tagBar;
 
         [MenuItem("Window/Enhanced Console %#&c")]
         public static void ShowWindow()
@@ -74,82 +68,735 @@ namespace otps.UnityConsole.Editor
         {
             settings = ConsoleSettings.Instance;
             Application.logMessageReceived += HandleLog;
-            InitializeStyles();
-            
-            // 키보드 이벤트를 받을 수 있도록 설정
-            wantsMouseMove = true;
-            
-            // 창이 비활성 상태일 때도 업데이트를 위해 EditorApplication.update 이벤트 등록
-            EditorApplication.update += OnEditorUpdate;
         }
 
         private void OnDisable()
         {
             Application.logMessageReceived -= HandleLog;
-            EditorApplication.update -= OnEditorUpdate;
-            
-            // 메모리 정리
-            styledTextStyleCache?.Clear();
-            buttonStyleCache?.Clear();
         }
-        
-        private bool needsRepaint = false;
-        
-        private void OnEditorUpdate()
+
+        public void CreateGUI()
         {
-            // 새로운 로그가 추가되었을 때 창이 비활성 상태여도 다시 그리기
-            if (needsRepaint)
+            var root = rootVisualElement;
+            root.Clear();
+
+            // 인라인 스타일 적용
+            ApplyInlineStyles(root);
+
+            // 메인 컨테이너
+            var mainContainer = new VisualElement();
+            mainContainer.name = "main-container";
+            mainContainer.style.flexGrow = 1;
+            root.Add(mainContainer);
+
+            // 툴바
+            var toolbar = CreateToolbar();
+            mainContainer.Add(toolbar);
+
+            // 태그 바
+            tagBar = CreateTagBar();
+            mainContainer.Add(tagBar);
+
+            // 분할 뷰 (로그 리스트 + 디테일)
+            var splitView = new TwoPaneSplitView(0, 300, TwoPaneSplitViewOrientation.Vertical);
+            splitView.style.flexGrow = 1;
+            mainContainer.Add(splitView);
+
+            // 로그 리스트
+            var logListContainer = new VisualElement();
+            logListContainer.style.flexGrow = 1;
+            logListView = CreateLogListView();
+            logListContainer.Add(logListView);
+            splitView.Add(logListContainer);
+
+            // 디테일 영역
+            detailScrollView = new ScrollView(ScrollViewMode.Vertical);
+            detailScrollView.name = "detail-scroll-view";
+            detailScrollView.style.flexGrow = 1;
+            splitView.Add(detailScrollView);
+
+            // 키보드 이벤트 핸들러 등록
+            root.RegisterCallback<KeyDownEvent>(OnKeyDown);
+
+            RefreshLogListView();
+        }
+
+        private void ApplyInlineStyles(VisualElement root)
+        {
+            // 스타일은 각 요소에 직접 적용됨
+        }
+
+        private Toolbar CreateToolbar()
+        {
+            var toolbar = new Toolbar();
+            toolbar.style.backgroundColor = new Color(0.24f, 0.24f, 0.24f);
+            toolbar.style.borderBottomWidth = 1;
+            toolbar.style.borderBottomColor = new Color(0.12f, 0.12f, 0.12f);
+
+            // Clear 버튼
+            var clearButton = new ToolbarButton(() =>
             {
-                needsRepaint = false;
-                Repaint();
+                logEntries.Clear();
+                selectedIndex = -1;
+                InvalidateCache();
+                RefreshLogListView();
+            }) { text = "Clear" };
+            toolbar.Add(clearButton);
+
+            // 공백
+            toolbar.Add(new VisualElement { style = { width = 5 } });
+
+            // Collapse 토글
+            var collapseToggle = new ToolbarToggle { text = "Collapse", value = collapse };
+            collapseToggle.RegisterValueChangedCallback(evt =>
+            {
+                collapse = evt.newValue;
+                InvalidateCache();
+                RefreshLogListView();
+            });
+            toolbar.Add(collapseToggle);
+
+            // Clear on Play 토글
+            var clearOnPlayToggle = new ToolbarToggle { text = "Clear on Play", value = clearOnPlay };
+            clearOnPlayToggle.RegisterValueChangedCallback(evt => clearOnPlay = evt.newValue);
+            toolbar.Add(clearOnPlayToggle);
+
+            // Error Pause 토글
+            var errorPauseToggle = new ToolbarToggle { text = "Error Pause", value = errorPause };
+            errorPauseToggle.RegisterValueChangedCallback(evt => errorPause = evt.newValue);
+            toolbar.Add(errorPauseToggle);
+
+            // 공백
+            toolbar.Add(new VisualElement { style = { width = 5 } });
+
+            // 검색 레이블
+            var searchLabel = new Label("검색:");
+            searchLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+            searchLabel.style.width = 35;
+            toolbar.Add(searchLabel);
+
+            // 검색 필드
+            searchField = new TextField { value = settings.SearchFilter };
+            searchField.style.width = 150;
+            searchField.RegisterValueChangedCallback(evt =>
+            {
+                settings.SearchFilter = evt.newValue;
+                InvalidateCache();
+                RefreshLogListView();
+            });
+            toolbar.Add(searchField);
+
+            // Flexible space
+            var flexSpace = new VisualElement();
+            flexSpace.style.flexGrow = 1;
+            toolbar.Add(flexSpace);
+
+            // Frame 토글
+            var frameToggle = new ToolbarToggle { text = "Frame", value = settings.ShowFrameCount };
+            frameToggle.RegisterValueChangedCallback(evt =>
+            {
+                settings.ShowFrameCount = evt.newValue;
+                RefreshLogListView();
+            });
+            toolbar.Add(frameToggle);
+
+            // GameTime 토글
+            var gameTimeToggle = new ToolbarToggle { text = "GameTime", value = settings.ShowFixedTime };
+            gameTimeToggle.RegisterValueChangedCallback(evt =>
+            {
+                settings.ShowFixedTime = evt.newValue;
+                RefreshLogListView();
+            });
+            toolbar.Add(gameTimeToggle);
+
+            // Time 토글
+            var timeToggle = new ToolbarToggle { text = "Time", value = settings.ShowTimestamp };
+            timeToggle.RegisterValueChangedCallback(evt =>
+            {
+                settings.ShowTimestamp = evt.newValue;
+                RefreshLogListView();
+            });
+            toolbar.Add(timeToggle);
+
+            // 공백
+            toolbar.Add(new VisualElement { style = { width = 5 } });
+
+            // 로그 카운트 토글 (아이콘 포함)
+            var logToggle = CreateLogCountToggle(LogType.Log, "console.infoicon.sml");
+            toolbar.Add(logToggle);
+
+            var warningToggle = CreateLogCountToggle(LogType.Warning, "console.warnicon.sml");
+            toolbar.Add(warningToggle);
+
+            var errorToggle = CreateLogCountToggle(LogType.Error, "console.erroricon.sml");
+            toolbar.Add(errorToggle);
+
+            return toolbar;
+        }
+
+        private VisualElement CreateLogCountToggle(LogType logType, string iconName)
+        {
+            var container = new VisualElement();
+            container.style.flexDirection = FlexDirection.Row;
+            container.style.alignItems = Align.Center;
+            container.style.paddingLeft = 4;
+            container.style.paddingRight = 4;
+            container.style.paddingTop = 2;
+            container.style.paddingBottom = 2;
+            container.style.minWidth = 40;
+
+            var toggle = new Toggle();
+            toggle.style.marginRight = 2;
+            
+            if (logType == LogType.Log)
+            {
+                toggle.value = showLog;
+                toggle.RegisterValueChangedCallback(evt =>
+                {
+                    showLog = evt.newValue;
+                    InvalidateCache();
+                    RefreshLogListView();
+                });
+            }
+            else if (logType == LogType.Warning)
+            {
+                toggle.value = showWarning;
+                toggle.RegisterValueChangedCallback(evt =>
+                {
+                    showWarning = evt.newValue;
+                    InvalidateCache();
+                    RefreshLogListView();
+                });
+            }
+            else if (logType == LogType.Error)
+            {
+                toggle.value = showError;
+                toggle.RegisterValueChangedCallback(evt =>
+                {
+                    showError = evt.newValue;
+                    InvalidateCache();
+                    RefreshLogListView();
+                });
+            }
+
+            container.Add(toggle);
+
+            var icon = new Image();
+            var iconContent = EditorGUIUtility.IconContent(iconName);
+            icon.image = iconContent.image;
+            icon.style.width = 16;
+            icon.style.height = 16;
+            icon.style.marginRight = 2;
+            container.Add(icon);
+
+            Label countLabel = new Label(GetLogCount(logType).ToString());
+            
+            if (logType == LogType.Log)
+                logCountLabel = countLabel;
+            else if (logType == LogType.Warning)
+                warningCountLabel = countLabel;
+            else if (logType == LogType.Error)
+                errorCountLabel = countLabel;
+                
+            container.Add(countLabel);
+
+            return container;
+        }
+
+        private Toolbar CreateTagBar()
+        {
+            var toolbar = new Toolbar();
+            toolbar.style.backgroundColor = new Color(0.24f, 0.24f, 0.24f);
+            toolbar.style.borderBottomWidth = 1;
+            toolbar.style.borderBottomColor = new Color(0.12f, 0.12f, 0.12f);
+
+            // 태그 레이블
+            var tagLabel = new Label("태그:");
+            tagLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+            tagLabel.style.width = 35;
+            toolbar.Add(tagLabel);
+
+            // 태그 입력 필드
+            tagInputField = new TextField { value = newTagInput };
+            tagInputField.style.width = 100;
+            tagInputField.RegisterValueChangedCallback(evt => newTagInput = evt.newValue);
+            toolbar.Add(tagInputField);
+
+            // 태그 추가 버튼
+            var addTagButton = new ToolbarButton(() =>
+            {
+                if (!string.IsNullOrEmpty(newTagInput.Trim()))
+                {
+                    settings.AddTag(newTagInput.Trim());
+                    newTagInput = "";
+                    tagInputField.value = "";
+                    RefreshTagBar();
+                }
+            }) { text = "+" };
+            addTagButton.style.width = 25;
+            toolbar.Add(addTagButton);
+
+            // 공백
+            toolbar.Add(new VisualElement { style = { width = 5 } });
+
+            // 활성 태그 레이블 및 클리어 버튼 컨테이너
+            var activeTagContainer = new VisualElement();
+            activeTagContainer.name = "active-tag-container";
+            activeTagContainer.style.flexDirection = FlexDirection.Row;
+            toolbar.Add(activeTagContainer);
+
+            if (!string.IsNullOrEmpty(settings.ActiveTag))
+            {
+                activeTagLabel = new Label($"필터: {settings.ActiveTag}");
+                activeTagLabel.style.color = new Color(0, 1, 1);
+                activeTagLabel.style.width = 100;
+                activeTagLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+                activeTagContainer.Add(activeTagLabel);
+
+                clearActiveTagButton = new ToolbarButton(() =>
+                {
+                    settings.ActiveTag = "";
+                    InvalidateCache();
+                    RefreshTagBar();
+                    RefreshLogListView();
+                }) { text = "X" };
+                clearActiveTagButton.style.width = 25;
+                activeTagContainer.Add(clearActiveTagButton);
+                
+                toolbar.Add(new VisualElement { style = { width = 5 } });
+            }
+
+            // 태그 컨테이너
+            tagContainer = new VisualElement();
+            tagContainer.style.flexDirection = FlexDirection.Row;
+            tagContainer.style.flexGrow = 1;
+            toolbar.Add(tagContainer);
+
+            RefreshTagButtons();
+
+            return toolbar;
+        }
+
+        private void RefreshTagBar()
+        {
+            if (tagBar == null)
+                return;
+
+            // 활성 태그 컨테이너 찾기
+            var activeTagContainer = tagBar.Q<VisualElement>("active-tag-container");
+            if (activeTagContainer != null)
+            {
+                activeTagContainer.Clear();
+
+                if (!string.IsNullOrEmpty(settings.ActiveTag))
+                {
+                    activeTagLabel = new Label($"필터: {settings.ActiveTag}");
+                    activeTagLabel.style.color = new Color(0, 1, 1);
+                    activeTagLabel.style.width = 100;
+                    activeTagLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+                    activeTagContainer.Add(activeTagLabel);
+
+                    clearActiveTagButton = new ToolbarButton(() =>
+                    {
+                        settings.ActiveTag = "";
+                        InvalidateCache();
+                        RefreshTagBar();
+                        RefreshLogListView();
+                    }) { text = "X" };
+                    clearActiveTagButton.style.width = 25;
+                    activeTagContainer.Add(clearActiveTagButton);
+                }
+            }
+
+            RefreshTagButtons();
+        }
+
+        private void RefreshTagButtons()
+        {
+            if (tagContainer == null)
+                return;
+
+            tagContainer.Clear();
+
+            foreach (var tag in settings.Tags)
+            {
+                bool isActive = settings.ActiveTag == tag;
+                
+                var tagButton = new ToolbarButton(() =>
+                {
+                    if (settings.ActiveTag == tag)
+                        settings.ActiveTag = "";
+                    else
+                        settings.ActiveTag = tag;
+                    
+                    InvalidateCache();
+                    RefreshTagBar();
+                    RefreshLogListView();
+                }) { text = tag };
+                
+                tagButton.style.minWidth = 50;
+                
+                if (isActive)
+                {
+                    tagButton.style.color = new Color(0, 1, 1);
+                }
+
+                tagContainer.Add(tagButton);
+
+                // 삭제 버튼
+                var removeButton = new ToolbarButton(() =>
+                {
+                    settings.RemoveTag(tag);
+                    InvalidateCache();
+                    RefreshTagBar();
+                    RefreshLogListView();
+                }) { text = "-" };
+                removeButton.style.width = 20;
+                tagContainer.Add(removeButton);
+
+                tagContainer.Add(new VisualElement { style = { width = 2 } });
             }
         }
 
-        private void InitializeStyles()
+        private ListView CreateLogListView()
         {
-            logStyle = new GUIStyle();
-            logStyle.normal.textColor = Color.white;
-            logStyle.fontSize = 12;
-            logStyle.padding = new RectOffset(5, 5, 2, 2);
+            var listView = new ListView
+            {
+                selectionType = SelectionType.Single,
+                fixedItemHeight = 20,
+                style = { flexGrow = 1 }
+            };
 
-            warningStyle = new GUIStyle(logStyle);
-            warningStyle.normal.textColor = Color.yellow;
+            listView.makeItem = () =>
+            {
+                var container = new VisualElement();
+                container.style.flexDirection = FlexDirection.Row;
+                container.style.alignItems = Align.Center;
+                container.style.paddingLeft = 2;
+                container.style.paddingRight = 5;
+                container.style.paddingTop = 2;
+                container.style.paddingBottom = 2;
+                container.style.minHeight = 20;
 
-            errorStyle = new GUIStyle(logStyle);
-            errorStyle.normal.textColor = Color.red;
+                // 아이콘
+                var icon = new Image();
+                icon.style.width = 16;
+                icon.style.height = 16;
+                icon.style.marginRight = 4;
+                container.Add(icon);
 
-            evenBackgroundStyle = new GUIStyle();
-            evenBackgroundStyle.normal.background = MakeTexture(2, 2, new Color(0.3f, 0.3f, 0.3f, 1f));
+                // Frame Count
+                var frameLabel = new Label();
+                frameLabel.name = "frame-label";
+                frameLabel.style.width = 60;
+                frameLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+                frameLabel.style.color = Color.white;
+                container.Add(frameLabel);
 
-            oddBackgroundStyle = new GUIStyle();
-            oddBackgroundStyle.normal.background = MakeTexture(2, 2, new Color(0.25f, 0.25f, 0.25f, 1f));
+                // Fixed Time
+                var timeLabel = new Label();
+                timeLabel.name = "time-label";
+                timeLabel.style.width = 70;
+                timeLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+                timeLabel.style.color = Color.white;
+                container.Add(timeLabel);
 
-            selectedBackgroundStyle = new GUIStyle();
-            selectedBackgroundStyle.normal.background = MakeTexture(2, 2, new Color(0.3f, 0.5f, 0.7f, 1f)); // 연한 파랑색
-            
-            // 로그 레벨별 아이콘 로드
-            logIcon = EditorGUIUtility.IconContent("console.infoicon.sml");
-            warningIcon = EditorGUIUtility.IconContent("console.warnicon.sml");
-            errorIcon = EditorGUIUtility.IconContent("console.erroricon.sml");
-            
-            // 스타일 캐시 초기화
-            styledTextStyleCache?.Clear();
-            buttonStyleCache?.Clear();
+                // Timestamp
+                var timestampLabel = new Label();
+                timestampLabel.name = "timestamp-label";
+                timestampLabel.style.width = 75;
+                timestampLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+                timestampLabel.style.color = Color.white;
+                container.Add(timestampLabel);
+
+                // Message
+                var messageLabel = new Label();
+                messageLabel.name = "message-label";
+                messageLabel.style.flexGrow = 1;
+                messageLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+                messageLabel.style.color = Color.white;
+                container.Add(messageLabel);
+
+                return container;
+            };
+
+            listView.bindItem = (element, index) =>
+            {
+                var filteredEntries = GetFilteredEntries();
+                if (index < 0 || index >= filteredEntries.Count)
+                    return;
+
+                var entry = filteredEntries[index];
+                int actualIndex = logEntries.IndexOf(entry);
+                
+                // 배경색 설정
+                if (actualIndex == selectedIndex)
+                {
+                    element.style.backgroundColor = new Color(0.24f, 0.37f, 0.54f);
+                }
+                else if (index % 2 == 0)
+                {
+                    element.style.backgroundColor = new Color(0.17f, 0.17f, 0.17f);
+                }
+                else
+                {
+                    element.style.backgroundColor = new Color(0.15f, 0.15f, 0.15f);
+                }
+
+                // 아이콘
+                var icon = element.Q<Image>();
+                var iconContent = GetIconContentForLogType(entry.logType);
+                icon.image = iconContent.image;
+
+                // Frame Count
+                var frameLabel = element.Q<Label>("frame-label");
+                if (settings.ShowFrameCount)
+                {
+                    frameLabel.text = $"[{entry.frameCount}]";
+                    frameLabel.style.display = DisplayStyle.Flex;
+                }
+                else
+                {
+                    frameLabel.style.display = DisplayStyle.None;
+                }
+
+                // Fixed Time
+                var timeLabel = element.Q<Label>("time-label");
+                if (settings.ShowFixedTime)
+                {
+                    timeLabel.text = $"[{entry.fixedTime:F2}s]";
+                    timeLabel.style.display = DisplayStyle.Flex;
+                }
+                else
+                {
+                    timeLabel.style.display = DisplayStyle.None;
+                }
+
+                // Timestamp
+                var timestampLabel = element.Q<Label>("timestamp-label");
+                if (settings.ShowTimestamp)
+                {
+                    timestampLabel.text = $"[{entry.timestamp:HH:mm:ss}]";
+                    timestampLabel.style.display = DisplayStyle.Flex;
+                }
+                else
+                {
+                    timestampLabel.style.display = DisplayStyle.None;
+                }
+
+                // Message
+                var messageLabel = element.Q<Label>("message-label");
+                messageLabel.text = entry.message;
+                
+                // 텍스트 색상
+                if (entry.logType == LogType.Warning)
+                {
+                    messageLabel.style.color = Color.yellow;
+                }
+                else if (entry.logType == LogType.Error || entry.logType == LogType.Exception || entry.logType == LogType.Assert)
+                {
+                    messageLabel.style.color = Color.red;
+                }
+                else
+                {
+                    messageLabel.style.color = Color.white;
+                }
+            };
+
+            listView.selectionChanged += (items) =>
+            {
+                var selectedItems = new List<object>(items);
+                if (selectedItems.Count > 0)
+                {
+                    var filteredEntries = GetFilteredEntries();
+                    int index = listView.selectedIndex;
+                    if (index >= 0 && index < filteredEntries.Count)
+                    {
+                        selectedIndex = logEntries.IndexOf(filteredEntries[index]);
+                        UpdateDetailView();
+                        RefreshLogListView(); // 선택 상태 반영
+                    }
+                }
+            };
+
+            // 더블 클릭 핸들러
+            listView.RegisterCallback<MouseDownEvent>(evt =>
+            {
+                if (evt.clickCount == 2 && selectedIndex >= 0 && selectedIndex < logEntries.Count)
+                {
+                    OpenScriptFromStackTrace(logEntries[selectedIndex].stackTrace);
+                }
+            });
+
+            return listView;
         }
 
-        private Texture2D MakeTexture(int width, int height, Color color)
+        private void RefreshLogListView()
         {
-            Color[] pixels = new Color[width * height];
-            for (int i = 0; i < pixels.Length; i++)
+            if (logListView == null)
+                return;
+
+            var filteredEntries = GetFilteredEntries();
+            logListView.itemsSource = filteredEntries;
+            logListView.Rebuild();
+
+            // 카운트 레이블 업데이트
+            if (logCountLabel != null)
+                logCountLabel.text = GetLogCount(LogType.Log).ToString();
+            if (warningCountLabel != null)
+                warningCountLabel.text = GetLogCount(LogType.Warning).ToString();
+            if (errorCountLabel != null)
+                errorCountLabel.text = GetLogCount(LogType.Error).ToString();
+        }
+
+        private void UpdateDetailView()
+        {
+            if (detailScrollView == null)
+                return;
+
+            detailScrollView.Clear();
+
+            if (selectedIndex >= 0 && selectedIndex < logEntries.Count)
             {
-                pixels[i] = color;
+                var selectedEntry = logEntries[selectedIndex];
+
+                // 메시지
+                var messageLabel = new Label(selectedEntry.message);
+                messageLabel.style.paddingLeft = 5;
+                messageLabel.style.paddingRight = 5;
+                messageLabel.style.paddingTop = 5;
+                messageLabel.style.paddingBottom = 5;
+                messageLabel.style.whiteSpace = WhiteSpace.Normal;
+                messageLabel.style.color = Color.white;
+                detailScrollView.Add(messageLabel);
+
+                // 공백
+                detailScrollView.Add(new VisualElement { style = { height = 5 } });
+
+                // 스택 트레이스
+                DrawStackTraceLines(selectedEntry.stackTrace);
             }
-            Texture2D texture = new Texture2D(width, height);
-            texture.SetPixels(pixels);
-            texture.Apply();
-            // 에디터 재생 시 텍스처가 파괴되지 않도록 설정
-            texture.hideFlags = HideFlags.DontUnloadUnusedAsset;
-            return texture;
+        }
+
+        private void DrawStackTraceLines(string stackTrace)
+        {
+            if (string.IsNullOrEmpty(stackTrace))
+                return;
+
+            var lines = stackTrace.Split('\n');
+
+            foreach (var line in lines)
+            {
+                // UnityEngine.Debug:Log로 시작하는 라인 스킵
+                if (line.TrimStart().StartsWith("UnityEngine.Debug:Log"))
+                    continue;
+
+                // 파일 경로와 라인 번호가 있는지 확인
+                bool hasFileReference = line.Contains(" (at ") && line.Contains(")");
+
+                var lineLabel = new Label(line);
+                lineLabel.style.paddingLeft = 5;
+                lineLabel.style.paddingRight = 5;
+                lineLabel.style.paddingTop = 2;
+                lineLabel.style.paddingBottom = 2;
+                lineLabel.style.whiteSpace = WhiteSpace.Normal;
+                lineLabel.style.color = hasFileReference ? new Color(0.37f, 0.62f, 1.0f) : new Color(0.8f, 0.8f, 0.8f);
+
+                if (hasFileReference)
+                {
+                    // 클릭 이벤트
+                    lineLabel.RegisterCallback<MouseDownEvent>(evt =>
+                    {
+                        OpenScriptFromStackTraceLine(line);
+                    });
+                    
+                    // 커서 변경
+                    lineLabel.RegisterCallback<MouseEnterEvent>(evt =>
+                    {
+                        lineLabel.style.color = new Color(0.56f, 0.78f, 1.0f);
+                    });
+                    
+                    lineLabel.RegisterCallback<MouseLeaveEvent>(evt =>
+                    {
+                        lineLabel.style.color = new Color(0.37f, 0.62f, 1.0f);
+                    });
+                }
+
+                detailScrollView.Add(lineLabel);
+            }
+        }
+
+        private void OnKeyDown(KeyDownEvent evt)
+        {
+            bool handled = false;
+
+            if (evt.keyCode == KeyCode.DownArrow)
+            {
+                // 다음 에러로 이동
+                if (selectedIndex >= 0)
+                {
+                    int nextErrorIndex = FindNextError(selectedIndex);
+                    if (nextErrorIndex >= 0)
+                    {
+                        selectedIndex = nextErrorIndex;
+                        ScrollToSelectedLog();
+                        UpdateDetailView();
+                        handled = true;
+                    }
+                }
+            }
+            else if (evt.keyCode == KeyCode.UpArrow)
+            {
+                // 이전 에러로 이동
+                if (selectedIndex >= 0)
+                {
+                    int prevErrorIndex = FindPreviousError(selectedIndex);
+                    if (prevErrorIndex >= 0)
+                    {
+                        selectedIndex = prevErrorIndex;
+                        ScrollToSelectedLog();
+                        UpdateDetailView();
+                        handled = true;
+                    }
+                }
+            }
+
+            if (handled)
+            {
+                evt.StopPropagation();
+            }
+        }
+
+        private void ScrollToSelectedLog()
+        {
+            if (selectedIndex < 0 || selectedIndex >= logEntries.Count || logListView == null)
+                return;
+
+            // 선택된 로그를 filteredEntries에서 찾기
+            List<ConsoleLogEntry> filteredEntries = GetFilteredEntries();
+            ConsoleLogEntry selectedEntry = logEntries[selectedIndex];
+            int filteredIndex = filteredEntries.IndexOf(selectedEntry);
+
+            if (filteredIndex >= 0)
+            {
+                logListView.selectedIndex = filteredIndex;
+                logListView.ScrollToItem(filteredIndex);
+            }
+        }
+
+        private GUIContent GetIconContentForLogType(LogType type)
+        {
+            switch (type)
+            {
+                case LogType.Warning:
+                    return EditorGUIUtility.IconContent("console.warnicon.sml");
+                case LogType.Error:
+                case LogType.Exception:
+                case LogType.Assert:
+                    return EditorGUIUtility.IconContent("console.erroricon.sml");
+                default:
+                    return EditorGUIUtility.IconContent("console.infoicon.sml");
+            }
         }
 
         private void HandleLog(string logString, string stackTrace, LogType type)
@@ -178,20 +825,21 @@ namespace otps.UnityConsole.Editor
                 Debug.Break();
             }
 
-            // 스크롤이 하단에 있으면 자동으로 스크롤
-            if (wasScrollAtBottom)
+            // UI 업데이트
+            EditorApplication.delayCall += () =>
             {
-                // 다음 프레임에서 스크롤을 맨 아래로 설정
-                EditorApplication.delayCall += () =>
+                RefreshLogListView();
+                
+                // 스크롤이 하단에 있으면 자동으로 스크롤
+                if (wasScrollAtBottom && logListView != null)
                 {
-                    scrollPosition.y = float.MaxValue;
-                    Repaint();
-                };
-            }
-
-            // 창이 비활성 상태일 때도 업데이트되도록 플래그 설정
-            needsRepaint = true;
-            Repaint();
+                    var filteredEntries = GetFilteredEntries();
+                    if (filteredEntries.Count > 0)
+                    {
+                        logListView.ScrollToItem(filteredEntries.Count - 1);
+                    }
+                }
+            };
         }
         
         private void InvalidateCache()
@@ -200,102 +848,6 @@ namespace otps.UnityConsole.Editor
             cachedLogCount = -1;
             cachedWarningCount = -1;
             cachedErrorCount = -1;
-            // 스크롤 위치는 유지 - wasScrollAtBottom 플래그만 사용
-        }
-
-        private void OnGUI()
-        {
-            // 스타일 또는 텍스처가 손실된 경우 재초기화
-            if (logStyle == null || evenBackgroundStyle == null || oddBackgroundStyle == null || 
-                selectedBackgroundStyle == null || evenBackgroundStyle.normal.background == null ||
-                oddBackgroundStyle.normal.background == null || selectedBackgroundStyle.normal.background == null)
-            {
-                InitializeStyles();
-            }
-
-            HandleKeyboardInput();
-            
-            DrawToolbar();
-            DrawTagBar();
-            DrawLogList();
-            DrawDetailArea();
-        }
-        
-        private void HandleKeyboardInput()
-        {
-            Event e = Event.current;
-            
-            // KeyDown 이벤트를 처리
-            if (e.type == EventType.KeyDown)
-            {
-                bool handled = false;
-                
-                if (e.keyCode == KeyCode.DownArrow)
-                {
-                    // 다음 에러로 이동
-                    if (selectedIndex >= 0)
-                    {
-                        int nextErrorIndex = FindNextError(selectedIndex);
-                        if (nextErrorIndex >= 0)
-                        {
-                            selectedIndex = nextErrorIndex;
-                            ScrollToSelectedLog();
-                            handled = true;
-                        }
-                    }
-                }
-                else if (e.keyCode == KeyCode.UpArrow)
-                {
-                    // 이전 에러로 이동
-                    if (selectedIndex >= 0)
-                    {
-                        int prevErrorIndex = FindPreviousError(selectedIndex);
-                        if (prevErrorIndex >= 0)
-                        {
-                            selectedIndex = prevErrorIndex;
-                            ScrollToSelectedLog();
-                            handled = true;
-                        }
-                    }
-                }
-                
-                if (handled)
-                {
-                    e.Use();
-                    Repaint();
-                }
-            }
-        }
-        
-        private void ScrollToSelectedLog()
-        {
-            if (selectedIndex < 0 || selectedIndex >= logEntries.Count)
-                return;
-            
-            // 선택된 로그를 filteredEntries에서 찾기
-            List<ConsoleLogEntry> filteredEntries = GetFilteredEntries();
-            ConsoleLogEntry selectedEntry = logEntries[selectedIndex];
-            int filteredIndex = filteredEntries.IndexOf(selectedEntry);
-            
-            if (filteredIndex >= 0)
-            {
-                // 선택된 로그가 화면에 보이도록 스크롤 위치 조정
-                float listHeight = position.height * 0.6f;
-                float targetScrollY = filteredIndex * LogEntryHeight;
-                float currentScrollY = scrollPosition.y;
-                
-                // 선택된 항목이 화면 밖에 있으면 스크롤
-                if (targetScrollY < currentScrollY)
-                {
-                    // 위쪽에 있으면
-                    scrollPosition.y = targetScrollY;
-                }
-                else if (targetScrollY + LogEntryHeight > currentScrollY + listHeight)
-                {
-                    // 아래쪽에 있으면
-                    scrollPosition.y = targetScrollY + LogEntryHeight - listHeight;
-                }
-            }
         }
         
         private int FindNextError(int currentIndex)
@@ -325,365 +877,6 @@ namespace otps.UnityConsole.Editor
         private bool IsErrorLog(LogType type)
         {
             return type == LogType.Error || type == LogType.Exception || type == LogType.Assert;
-        }
-
-        private void DrawToolbar()
-        {
-            EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
-
-            if (GUILayout.Button("Clear", EditorStyles.toolbarButton, GUILayout.Width(50)))
-            {
-                logEntries.Clear();
-                selectedIndex = -1;
-                InvalidateCache();
-            }
-
-            GUILayout.Space(5);
-
-            bool newCollapse = GUILayout.Toggle(collapse, "Collapse", EditorStyles.toolbarButton);
-            if (newCollapse != collapse)
-            {
-                collapse = newCollapse;
-                InvalidateCache();
-            }
-            clearOnPlay = GUILayout.Toggle(clearOnPlay, "Clear on Play", EditorStyles.toolbarButton);
-            errorPause = GUILayout.Toggle(errorPause, "Error Pause", EditorStyles.toolbarButton);
-
-            GUILayout.Space(5);
-
-            // 검색 필터
-            GUILayout.Label("검색:", GUILayout.Width(35));
-            string newSearchFilter = EditorGUILayout.TextField(settings.SearchFilter, EditorStyles.toolbarTextField, GUILayout.Width(150));
-            if (newSearchFilter != settings.SearchFilter)
-            {
-                settings.SearchFilter = newSearchFilter;
-                InvalidateCache();
-                Repaint();
-            }
-
-            GUILayout.FlexibleSpace();
-
-            // Time.frameCount 표시 토글
-            bool newShowFrameCount = GUILayout.Toggle(settings.ShowFrameCount, "Frame", EditorStyles.toolbarButton);
-            if (newShowFrameCount != settings.ShowFrameCount)
-            {
-                settings.ShowFrameCount = newShowFrameCount;
-                Repaint();
-            }
-
-            // Time.fixedTime 표시 토글
-            bool newShowFixedTime = GUILayout.Toggle(settings.ShowFixedTime, "GameTime", EditorStyles.toolbarButton);
-            if (newShowFixedTime != settings.ShowFixedTime)
-            {
-                settings.ShowFixedTime = newShowFixedTime;
-                Repaint();
-            }
-
-            // DateTime.Now 표시 토글
-            bool newShowTimestamp = GUILayout.Toggle(settings.ShowTimestamp, "Time", EditorStyles.toolbarButton);
-            if (newShowTimestamp != settings.ShowTimestamp)
-            {
-                settings.ShowTimestamp = newShowTimestamp;
-                Repaint();
-            }
-
-            GUILayout.Space(5);
-
-            // 로그 타입별 필터 버튼 (아이콘과 개수 표시)
-            GUIContent logContent = new GUIContent(GetLogCount(LogType.Log).ToString(), logIcon.image);
-            GUIContent warningContent = new GUIContent(GetLogCount(LogType.Warning).ToString(), warningIcon.image);
-            GUIContent errorContent = new GUIContent(GetLogCount(LogType.Error).ToString(), errorIcon.image);
-            
-            bool newShowLog = GUILayout.Toggle(showLog, logContent, EditorStyles.toolbarButton, GUILayout.Width(40));
-            bool newShowWarning = GUILayout.Toggle(showWarning, warningContent, EditorStyles.toolbarButton, GUILayout.Width(40));
-            bool newShowError = GUILayout.Toggle(showError, errorContent, EditorStyles.toolbarButton, GUILayout.Width(40));
-            
-            if (newShowLog != showLog || newShowWarning != showWarning || newShowError != showError)
-            {
-                showLog = newShowLog;
-                showWarning = newShowWarning;
-                showError = newShowError;
-                InvalidateCache();
-            }
-
-            EditorGUILayout.EndHorizontal();
-        }
-
-        private void DrawTagBar()
-        {
-            EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
-
-            GUILayout.Label("태그:", GUILayout.Width(35));
-            
-            // 새 태그 입력 필드
-            newTagInput = EditorGUILayout.TextField(newTagInput, EditorStyles.toolbarTextField, GUILayout.Width(100));
-            
-            // 태그 추가 버튼
-            if (GUILayout.Button("+", EditorStyles.toolbarButton, GUILayout.Width(25)))
-            {
-                if (!string.IsNullOrEmpty(newTagInput.Trim()))
-                {
-                    settings.AddTag(newTagInput.Trim());
-                    newTagInput = "";
-                    Repaint();
-                }
-            }
-            
-            GUILayout.Space(5);
-            
-            // 활성 태그를 표시하고 비활성화 버튼
-            if (!string.IsNullOrEmpty(settings.ActiveTag))
-            {
-                GUILayout.Label($"필터: {settings.ActiveTag}", GUILayout.Width(100));
-                if (GUILayout.Button("X", EditorStyles.toolbarButton, GUILayout.Width(25)))
-                {
-                    settings.ActiveTag = "";
-                    InvalidateCache();
-                    Repaint();
-                }
-                GUILayout.Space(5);
-            }
-            
-            // 태그 목록 표시 (버튼으로) - 복사본으로 순회하여 안전하게 삭제
-            string tagToRemove = null;
-            foreach (var tag in settings.Tags)
-            {
-                // 활성 태그는 다른 색상으로 표시
-                bool isActive = settings.ActiveTag == tag;
-                Color originalColor = GUI.contentColor;
-                if (isActive)
-                {
-                    GUI.contentColor = Color.cyan;
-                }
-                
-                if (GUILayout.Button(tag, EditorStyles.toolbarButton, GUILayout.MinWidth(50)))
-                {
-                    // 태그 클릭 시 필터 활성화/비활성화 토글
-                    if (settings.ActiveTag == tag)
-                    {
-                        settings.ActiveTag = "";
-                    }
-                    else
-                    {
-                        settings.ActiveTag = tag;
-                    }
-                    InvalidateCache();
-                    Repaint();
-                }
-                
-                GUI.contentColor = originalColor;
-                
-                // 태그 삭제 버튼
-                if (GUILayout.Button("-", EditorStyles.toolbarButton, GUILayout.Width(20)))
-                {
-                    tagToRemove = tag;
-                }
-                
-                GUILayout.Space(2);
-            }
-            
-            // 루프 밖에서 태그 삭제
-            if (tagToRemove != null)
-            {
-                settings.RemoveTag(tagToRemove);
-                InvalidateCache();
-                Repaint();
-            }
-            
-            GUILayout.FlexibleSpace();
-
-            EditorGUILayout.EndHorizontal();
-        }
-
-        private void DrawLogList()
-        {
-            float listHeight = position.height * 0.6f;
-            
-            scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition, GUILayout.Height(listHeight));
-
-            List<ConsoleLogEntry> filteredEntries = GetFilteredEntries();
-            
-            // 가상 스크롤링: 보이는 영역만 렌더링
-            int totalLogs = filteredEntries.Count;
-            float totalHeight = totalLogs * LogEntryHeight;
-            
-            // 보이는 영역 계산
-            int firstVisibleIndex = Mathf.Max(0, (int)(scrollPosition.y / LogEntryHeight));
-            int lastVisibleIndex = Mathf.Min(totalLogs - 1, (int)((scrollPosition.y + listHeight) / LogEntryHeight) + 1);
-            
-            // 상단 여백
-            if (firstVisibleIndex > 0)
-            {
-                GUILayout.Space(firstVisibleIndex * LogEntryHeight);
-            }
-            
-            for (int i = firstVisibleIndex; i <= lastVisibleIndex && i < totalLogs; i++)
-            {
-                ConsoleLogEntry entry = filteredEntries[i];
-                
-                int actualIndex = logEntries.IndexOf(entry);
-                bool isSelected = (actualIndex == selectedIndex);
-                
-                // 선택된 로그는 연한 파랑색 배경, 아니면 짝수/홀수 배경
-                GUIStyle backgroundStyle;
-                if (isSelected)
-                {
-                    backgroundStyle = selectedBackgroundStyle;
-                }
-                else
-                {
-                    backgroundStyle = (i % 2 == 0) ? evenBackgroundStyle : oddBackgroundStyle;
-                }
-                
-                GUIStyle textStyle = GetStyleForLogType(entry.logType);
-                
-                // 스타일 캐싱으로 재사용 (성능 최적화)
-                int styleKey = (isSelected ? 1000000 : 0) + (i % 2 == 0 ? 100000 : 0) + (int)entry.logType;
-                
-                if (!styledTextStyleCache.TryGetValue(styleKey, out GUIStyle styledTextStyle))
-                {
-                    styledTextStyle = new GUIStyle(textStyle);
-                    styledTextStyle.normal.background = backgroundStyle.normal.background;
-                    styledTextStyleCache[styleKey] = styledTextStyle;
-                }
-                
-                if (!buttonStyleCache.TryGetValue(styleKey, out GUIStyle buttonStyle))
-                {
-                    buttonStyle = new GUIStyle(textStyle);
-                    buttonStyle.normal.background = backgroundStyle.normal.background;
-                    buttonStyle.alignment = TextAnchor.MiddleLeft;
-                    buttonStyleCache[styleKey] = buttonStyle;
-                }
-
-                EditorGUILayout.BeginHorizontal(backgroundStyle, GUILayout.Height(LogEntryHeight));
-
-                // 로그 타입 아이콘 표시
-                GUIContent icon = GetIconForLogType(entry.logType);
-                GUILayout.Label(icon, styledTextStyle, GUILayout.Width(20));
-
-                // Frame Count 컬럼 (설정에 따라 표시)
-                if (settings.ShowFrameCount)
-                {
-                    GUILayout.Label($"[{entry.frameCount}]", styledTextStyle, GUILayout.Width(60));
-                }
-
-                // Fixed Time 컬럼 (설정에 따라 표시)
-                if (settings.ShowFixedTime)
-                {
-                    GUILayout.Label($"[{entry.fixedTime:F2}s]", styledTextStyle, GUILayout.Width(70));
-                }
-
-                // Timestamp 컬럼 (설정에 따라 표시)
-                if (settings.ShowTimestamp)
-                {
-                    GUILayout.Label($"[{entry.timestamp:HH:mm:ss}]", styledTextStyle, GUILayout.Width(75));
-                }
-
-                // 로그 메시지
-                string displayMessage = entry.message;
-                if (GUILayout.Button(displayMessage, buttonStyle, GUILayout.ExpandWidth(true)))
-                {
-                    // 더블 클릭 감지
-                    double currentTime = EditorApplication.timeSinceStartup;
-                    if (actualIndex == lastClickedIndex && (currentTime - lastClickTime) < 0.3)
-                    {
-                        // 더블 클릭됨 - IDE에서 스크립트 열기
-                        OpenScriptFromStackTrace(entry.stackTrace);
-                        lastClickedIndex = -1;
-                        lastClickTime = 0;
-                    }
-                    else
-                    {
-                        // 싱글 클릭 - 선택만
-                        selectedIndex = actualIndex;
-                        lastClickedIndex = actualIndex;
-                        lastClickTime = currentTime;
-                    }
-                }
-
-                EditorGUILayout.EndHorizontal();
-            }
-            
-            // 하단 여백
-            if (lastVisibleIndex < totalLogs - 1)
-            {
-                GUILayout.Space((totalLogs - lastVisibleIndex - 1) * LogEntryHeight);
-            }
-
-            EditorGUILayout.EndScrollView();
-            
-            // 스크롤 위치가 하단에 있는지 확인 (여유를 두고 10픽셀 이내)
-            Rect scrollViewRect = GUILayoutUtility.GetLastRect();
-            float maxScrollY = Mathf.Max(0, totalHeight - scrollViewRect.height);
-            wasScrollAtBottom = (maxScrollY == 0) || (scrollPosition.y >= maxScrollY - 10f);
-        }
-
-        private void DrawDetailArea()
-        {
-            if (selectedIndex >= 0 && selectedIndex < logEntries.Count)
-            {
-                EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandHeight(true));
-                
-                ConsoleLogEntry selectedEntry = logEntries[selectedIndex];
-                
-                // 메시지와 Stack Trace를 함께 스크롤
-                detailScrollPosition = EditorGUILayout.BeginScrollView(detailScrollPosition, GUILayout.ExpandHeight(true));
-                
-                // 메시지 표시 (선택 가능)
-                EditorGUILayout.SelectableLabel(selectedEntry.message, EditorStyles.wordWrappedLabel, GUILayout.ExpandHeight(false));
-                
-                EditorGUILayout.Space(5);
-                
-                // Stack Trace 표시 (각 라인을 클릭 가능하게)
-                DrawStackTraceLines(selectedEntry.stackTrace);
-                
-                EditorGUILayout.EndScrollView();
-                
-                EditorGUILayout.EndVertical();
-            }
-        }
-        
-        private void DrawStackTraceLines(string stackTrace)
-        {
-            if (string.IsNullOrEmpty(stackTrace))
-                return;
-
-            var lines = stackTrace.Split('\n');
-
-            foreach (var line in lines)
-            {
-                // UnityEngine.Debug:Log로 시작하는 라인 스킵
-                if (line.TrimStart().StartsWith("UnityEngine.Debug:Log"))
-                    continue;
-                
-                // 파일 경로와 라인 번호가 있는지 확인
-                bool hasFileReference = line.Contains(" (at ") && line.Contains(")");
-                
-                if (hasFileReference)
-                {
-                    // 클릭 가능한 버튼으로 표시
-                    GUIStyle buttonStyle = new GUIStyle(EditorStyles.label);
-                    buttonStyle.wordWrap = true;
-                    buttonStyle.normal.textColor = new Color(0.5f, 0.7f, 1.0f); // 파란색 톤
-                    
-                    if (GUILayout.Button(line, buttonStyle))
-                    {
-                        OpenScriptFromStackTraceLine(line);
-                    }
-                    
-                    // 마우스 오버 시 커서 변경
-                    Rect lastRect = GUILayoutUtility.GetLastRect();
-                    if (lastRect.Contains(Event.current.mousePosition))
-                    {
-                        EditorGUIUtility.AddCursorRect(lastRect, MouseCursor.Link);
-                    }
-                }
-                else
-                {
-                    // 파일 참조가 없는 라인은 선택 가능한 레이블로 표시
-                    EditorGUILayout.SelectableLabel(line, EditorStyles.wordWrappedLabel, GUILayout.ExpandHeight(false));
-                }
-            }
         }
         
         private void OpenScriptFromStackTraceLine(string line)
@@ -800,11 +993,11 @@ namespace otps.UnityConsole.Editor
                         continue;
                     
                     // 검색 필터 확인 (대소문자 구분 없이)
-                    if (hasSearchFilter && entry.message.IndexOf(settings.SearchFilter, System.StringComparison.OrdinalIgnoreCase) == -1)
+                    if (hasSearchFilter && entry.message.IndexOf(settings.SearchFilter, StringComparison.OrdinalIgnoreCase) == -1)
                         continue;
                     
                     // 태그 필터 확인 (대소문자 구분 없이)
-                    if (hasTagFilter && entry.message.IndexOf(settings.ActiveTag, System.StringComparison.OrdinalIgnoreCase) == -1)
+                    if (hasTagFilter && entry.message.IndexOf(settings.ActiveTag, StringComparison.OrdinalIgnoreCase) == -1)
                         continue;
                     
                     if (uniqueMessages.Add(entry.message))
@@ -822,11 +1015,11 @@ namespace otps.UnityConsole.Editor
                         continue;
                     
                     // 검색 필터 확인 (대소문자 구분 없이)
-                    if (hasSearchFilter && entry.message.IndexOf(settings.SearchFilter, System.StringComparison.OrdinalIgnoreCase) == -1)
+                    if (hasSearchFilter && entry.message.IndexOf(settings.SearchFilter, StringComparison.OrdinalIgnoreCase) == -1)
                         continue;
                     
                     // 태그 필터 확인 (대소문자 구분 없이)
-                    if (hasTagFilter && entry.message.IndexOf(settings.ActiveTag, System.StringComparison.OrdinalIgnoreCase) == -1)
+                    if (hasTagFilter && entry.message.IndexOf(settings.ActiveTag, StringComparison.OrdinalIgnoreCase) == -1)
                         continue;
                     
                     filtered.Add(entry);
@@ -851,36 +1044,6 @@ namespace otps.UnityConsole.Editor
                     return showError;
                 default:
                     return true;
-            }
-        }
-
-        private GUIStyle GetStyleForLogType(LogType type)
-        {
-            switch (type)
-            {
-                case LogType.Warning:
-                    return warningStyle;
-                case LogType.Error:
-                case LogType.Exception:
-                case LogType.Assert:
-                    return errorStyle;
-                default:
-                    return logStyle;
-            }
-        }
-
-        private GUIContent GetIconForLogType(LogType type)
-        {
-            switch (type)
-            {
-                case LogType.Warning:
-                    return warningIcon;
-                case LogType.Error:
-                case LogType.Exception:
-                case LogType.Assert:
-                    return errorIcon;
-                default:
-                    return logIcon;
             }
         }
 
