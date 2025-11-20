@@ -2,6 +2,8 @@
 
 Unity 기본 콘솔에 Time.frameCount를 추가한 확장 콘솔 패키지입니다.
 
+**최신 Unity UI Toolkit (UIElements)을 사용하여 성능과 사용자 경험을 최적화했습니다.**
+
 ## 기능
 
 - Unity 기본 콘솔과 유사한 UI
@@ -18,6 +20,12 @@ Unity 기본 콘솔에 Time.frameCount를 추가한 확장 콘솔 패키지입�
 - Error Pause
 - 로그 더블 클릭으로 IDE에서 해당 스크립트 파일 열기
 - 스택 트레이스에서 UnityEngine.Debug:Log 라인 자동 숨김
+
+## 기술 스택
+
+- **UI Framework**: Unity UI Toolkit (UIElements) - 고성능 선언적 UI 시스템
+- **성능 최적화**: ListView 가상화로 대량 로그 효율적 처리
+- **이벤트 시스템**: 최신 이벤트 기반 아키텍처
 
 ## 설치 방법
 
