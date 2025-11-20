@@ -85,6 +85,9 @@ namespace otps.UnityConsole.Editor
         {
             Application.logMessageReceived -= HandleLog;
             
+            // 보류 중인 저장 작업 실행
+            settings?.FlushPendingSave();
+            
             // 메모리 정리
             styledTextStyleCache?.Clear();
             buttonStyleCache?.Clear();
@@ -158,7 +161,7 @@ namespace otps.UnityConsole.Editor
             ConsoleLogEntry newEntry = new ConsoleLogEntry(logString, stackTrace, type);
             logEntries.Add(newEntry);
             
-            // 발견된 채널을 자동으로 등록
+            // 발견된 채널을 자동으로 등록 (배치 처리로 성능 최적화)
             List<string> discoveredChannels = newEntry.GetChannels();
             if (discoveredChannels.Count > 0)
             {
@@ -182,8 +185,11 @@ namespace otps.UnityConsole.Editor
                     Repaint();
                 };
             }
-
-            Repaint();
+            else
+            {
+                // 스크롤이 하단에 없으면 즉시 Repaint하지 않고 다음 프레임에 수행
+                EditorApplication.delayCall += () => Repaint();
+            }
         }
         
         private void InvalidateCache()
@@ -370,6 +376,9 @@ namespace otps.UnityConsole.Editor
 
         private void DrawChannelBar()
         {
+            // 보류 중인 저장 작업 실행 (채널 UI를 그리기 전)
+            settings.FlushPendingSave();
+            
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
 
             GUILayout.Label("채널:", GUILayout.Width(35));

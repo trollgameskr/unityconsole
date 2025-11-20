@@ -41,6 +41,12 @@ namespace otps.UnityConsole.Editor
         
         [SerializeField]
         private HashSet<string> activeChannels = new HashSet<string>();
+        
+        // 성능 최적화: 빠른 조회를 위한 HashSet
+        private HashSet<string> channelsSet = new HashSet<string>();
+        
+        // 성능 최적화: 저장 배치 처리
+        private bool pendingSave = false;
 
         public bool ShowFrameCount
         {
@@ -145,9 +151,10 @@ namespace otps.UnityConsole.Editor
         
         public void AddChannel(string channel)
         {
-            if (!string.IsNullOrEmpty(channel) && !channels.Contains(channel))
+            if (!string.IsNullOrEmpty(channel) && !channelsSet.Contains(channel))
             {
                 channels.Add(channel);
+                channelsSet.Add(channel);
                 // 새로 추가된 채널은 기본적으로 활성화
                 activeChannels.Add(channel);
                 SaveToPrefs();
@@ -158,6 +165,7 @@ namespace otps.UnityConsole.Editor
         {
             if (channels.Remove(channel))
             {
+                channelsSet.Remove(channel);
                 activeChannels.Remove(channel);
                 SaveToPrefs();
             }
@@ -188,15 +196,17 @@ namespace otps.UnityConsole.Editor
         
         /// <summary>
         /// 발견된 모든 채널을 자동으로 등록 (중복 방지)
+        /// 성능 최적화: SaveToPrefs를 즉시 호출하지 않고 플래그만 설정
         /// </summary>
         public void RegisterChannelsIfNeeded(List<string> discoveredChannels)
         {
             bool changed = false;
             foreach (string channel in discoveredChannels)
             {
-                if (!string.IsNullOrEmpty(channel) && !channels.Contains(channel))
+                if (!string.IsNullOrEmpty(channel) && !channelsSet.Contains(channel))
                 {
                     channels.Add(channel);
+                    channelsSet.Add(channel);
                     activeChannels.Add(channel); // 새로 발견된 채널은 기본적으로 활성화
                     changed = true;
                 }
@@ -204,7 +214,20 @@ namespace otps.UnityConsole.Editor
             
             if (changed)
             {
+                // 즉시 저장하지 않고 플래그만 설정 (성능 최적화)
+                pendingSave = true;
+            }
+        }
+        
+        /// <summary>
+        /// 보류 중인 저장 작업이 있으면 실행
+        /// </summary>
+        public void FlushPendingSave()
+        {
+            if (pendingSave)
+            {
                 SaveToPrefs();
+                pendingSave = false;
             }
         }
 
@@ -248,10 +271,13 @@ namespace otps.UnityConsole.Editor
             if (!string.IsNullOrEmpty(channelsJson))
             {
                 channels = new List<string>(JsonUtility.FromJson<ChannelListWrapper>(channelsJson).channels ?? new string[0]);
+                // HashSet 초기화
+                channelsSet = new HashSet<string>(channels);
             }
             else
             {
                 channels = new List<string>();
+                channelsSet = new HashSet<string>();
             }
             
             // 활성 채널 목록 로드 (JSON으로 저장)
@@ -265,6 +291,8 @@ namespace otps.UnityConsole.Editor
             {
                 activeChannels = new HashSet<string>();
             }
+            
+            pendingSave = false;
         }
 
         private void SaveToPrefs()
