@@ -546,14 +546,14 @@ namespace otps.UnityConsole.Editor
                 if (!styledTextStyleCache.TryGetValue(styleKey, out GUIStyle styledTextStyle))
                 {
                     styledTextStyle = new GUIStyle(textStyle);
-                    styledTextStyle.normal.background = backgroundStyle.normal.background;
+                    // 배경은 BeginHorizontal에 적용되므로 여기서는 설정하지 않음
                     styledTextStyleCache[styleKey] = styledTextStyle;
                 }
                 
                 if (!buttonStyleCache.TryGetValue(styleKey, out GUIStyle buttonStyle))
                 {
                     buttonStyle = new GUIStyle(textStyle);
-                    buttonStyle.normal.background = backgroundStyle.normal.background;
+                    // 배경은 BeginHorizontal에 적용되므로 여기서는 설정하지 않음
                     buttonStyle.alignment = TextAnchor.MiddleLeft;
                     buttonStyleCache[styleKey] = buttonStyle;
                 }
