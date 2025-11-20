@@ -521,9 +521,6 @@ namespace otps.UnityConsole.Editor
             {
                 ConsoleLogEntry entry = filteredEntries[i];
                 
-                if (!ShouldShowLog(entry.logType))
-                    continue;
-
                 int actualIndex = logEntries.IndexOf(entry);
                 bool isSelected = (actualIndex == selectedIndex);
                 
@@ -798,6 +795,10 @@ namespace otps.UnityConsole.Editor
 
                 foreach (var entry in logEntries)
                 {
+                    // 로그 타입 필터 확인
+                    if (!ShouldShowLog(entry.logType))
+                        continue;
+                    
                     // 검색 필터 확인 (대소문자 구분 없이)
                     if (hasSearchFilter && entry.message.IndexOf(settings.SearchFilter, System.StringComparison.OrdinalIgnoreCase) == -1)
                         continue;
@@ -816,6 +817,10 @@ namespace otps.UnityConsole.Editor
             {
                 foreach (var entry in logEntries)
                 {
+                    // 로그 타입 필터 확인
+                    if (!ShouldShowLog(entry.logType))
+                        continue;
+                    
                     // 검색 필터 확인 (대소문자 구분 없이)
                     if (hasSearchFilter && entry.message.IndexOf(settings.SearchFilter, System.StringComparison.OrdinalIgnoreCase) == -1)
                         continue;
